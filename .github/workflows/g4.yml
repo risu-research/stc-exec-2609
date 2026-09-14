@@ -27,11 +27,22 @@ jobs:
       - name: Run frozen G4 census
         run: python runner/g4.py --lock config/g4_lock.json --out out
       - name: Show summary
-        run: cat out/SUMMARY.md
+        if: always()
+        run: |
+          test -f out/SUMMARY.md && cat out/SUMMARY.md || true
+          test -f out/results.json && python - <<'PY'
+          import json
+          r=json.load(open('out/results.json'))
+          print('\nAzure duplicate action IDs:')
+          print(json.dumps(r.get('azure',{}).get('duplicate_action_ids',{}), indent=2))
+          print('\nStripe parse diagnostics:')
+          print(json.dumps(r.get('stripe',{}), indent=2)[:12000])
+          PY
       - name: Upload frozen result bundle
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: g4-results-${{ github.sha }}
           path: out/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 90
