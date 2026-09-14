@@ -1,5 +1,6 @@
 {
   "g6_authority_commit": "2a89543c43375e612c41f57cc4bcb127246b9ca0",
+  "g6_repro_amendment_commit": "f536f1f78f9acd4b5d400d84a444e73582b1f2a5",
   "g5_lock_path": "config/g5_lock.json",
   "policy": "P_DEL",
   "restricted_tokens": ["delete", "remove", "cancel"],
