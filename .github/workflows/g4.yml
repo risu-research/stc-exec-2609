@@ -26,16 +26,18 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Run frozen G4 census
         run: python runner/g4.py --lock config/g4_lock.json --out out
-      - name: Show summary
+      - name: Apply frozen G4.3 identity finalizer
+        run: python runner/g4_finalize.py
+      - name: Show final summary
         if: always()
         run: |
-          test -f out/SUMMARY.md && cat out/SUMMARY.md || true
+          test -f out/FINAL_SUMMARY.md && cat out/FINAL_SUMMARY.md || (test -f out/SUMMARY.md && cat out/SUMMARY.md || true)
           test -f out/results.json && python - <<'PY'
           import json
           r=json.load(open('out/results.json'))
           print('\nAzure duplicate action IDs:')
           print(json.dumps(r.get('azure',{}).get('duplicate_action_ids',{}), indent=2))
-          print('\nStripe parse diagnostics:')
+          print('\nStripe corroborative diagnostics:')
           print(json.dumps(r.get('stripe',{}), indent=2)[:12000])
           PY
       - name: Upload frozen result bundle
