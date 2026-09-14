@@ -1,0 +1,14 @@
+{
+  "authority_commit": "c45fa9be4de1c90716266ceac3b95da1bcc82351",
+  "policy": "P_DEL",
+  "restricted_tokens": ["delete", "remove", "cancel"],
+  "azure_commit": "76620db9a3e4eac8f122f893f6f138d7d2c35ffc",
+  "azure_sha256": "cff676fbe214cde6b86a9fa415013db4f0b5d1b5a2312428822a60b705936d1a",
+  "github_mcp_commit": "7d13a7ad6f2a17f351a6d77ce280c85ae1821f4d",
+  "github_mcp_sha256": "890efa234272ffcbbf021ffbeb9fce5f1e84ec2313f66d686cac6f303a7f3277",
+  "github_dispatcher_keys": ["method", "action", "operation", "command"],
+  "cloudflare_api_commit": "18fbf577213381a3da0af906dc975bc0bbb4d8f2",
+  "cloudflare_api_sha256": "9c1383e3898d510ee3ab02f352c40be36a34922232605a7a646191305b1743d5",
+  "cloudflare_mcp_commit": "1027dbd2865fc1932120db42ed53749bc30d2af0",
+  "http_methods": ["get", "post", "put", "patch", "delete", "head", "options"]
+}
