@@ -1,0 +1,12 @@
+{
+  "authority_commit": "528719c637eeffc6d9e5bd063b9c11ce3d71ae63",
+  "policy_version": "g4-v1",
+  "restricted_tokens": ["delete", "remove", "cancel"],
+  "github_dispatcher_keys": ["method", "action", "operation", "command"],
+  "http_methods": ["get", "post", "put", "patch", "delete", "head", "options"],
+  "azure_commit": "76620db9a3e4eac8f122f893f6f138d7d2c35ffc",
+  "github_mcp_commit": "7d13a7ad6f2a17f351a6d77ce280c85ae1821f4d",
+  "cloudflare_api_commit": "18fbf577213381a3da0af906dc975bc0bbb4d8f2",
+  "cloudflare_mcp_commit": "1027dbd2865fc1932120db42ed53749bc30d2af0",
+  "stripe_source": "https://docs.stripe.com/mcp"
+}
