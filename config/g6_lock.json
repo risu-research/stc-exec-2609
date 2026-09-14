@@ -1,0 +1,16 @@
+{
+  "g6_authority_commit": "2a89543c43375e612c41f57cc4bcb127246b9ca0",
+  "g5_lock_path": "config/g5_lock.json",
+  "policy": "P_DEL",
+  "restricted_tokens": ["delete", "remove", "cancel"],
+  "benchmark": {
+    "warmup": 5000,
+    "latency_samples_per_adapter": 30000,
+    "throughput_operations": 250000,
+    "rounds": 7,
+    "p99_added_overhead_us_max": 50.0,
+    "core_throughput_min_ops_s": 100000
+  },
+  "conformance_mutants_required": 8,
+  "profile_version": "0.1"
+}
