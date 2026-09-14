@@ -1,0 +1,37 @@
+name: g4-full-census
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'runner/**'
+      - 'tests/**'
+      - 'config/g4_lock.json'
+      - '.github/workflows/g4.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Run frozen G4 census
+        run: python runner/g4.py --lock config/g4_lock.json --out out
+      - name: Show summary
+        run: cat out/SUMMARY.md
+      - name: Upload frozen result bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: g4-results-${{ github.sha }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 90
