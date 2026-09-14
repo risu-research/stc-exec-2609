@@ -1,0 +1,81 @@
+name: g6-public-reproduction
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'runner/rac.py'
+      - 'runner/rac_runtime.py'
+      - 'runner/g5.py'
+      - 'runner/g5_audit.py'
+      - 'runner/g5_binding_audit.py'
+      - 'runner/g6.py'
+      - 'runner/g6_replay.py'
+      - 'runner/g6_conformance_audit.py'
+      - 'tests/test_g5.py'
+      - 'tests/test_g6.py'
+      - 'config/g5_lock.json'
+      - 'config/g6_lock.json'
+      - '.github/workflows/g6.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Unit and adversarial tests
+        run: python -m unittest tests/test_g5.py tests/test_g6.py -v
+
+      - name: Reconstruct frozen G5 evidence
+        run: python runner/g5.py --lock config/g5_lock.json --out out-g5
+
+      - name: Independent G5 oracle audit
+        run: python runner/g5_audit.py --out out-g5
+
+      - name: G5 runtime identity-binding audit
+        run: python runner/g5_binding_audit.py --lock config/g5_lock.json --out out-g5
+
+      - name: Replay G6 from frozen G5 artifacts
+        run: >-
+          python runner/g6_replay.py
+          --lock config/g6_lock.json
+          --contracts out-g5/g5_contracts.json
+          --g5-results out-g5/g5_results.json
+          --source-hashes out-g5/g5_source_hashes.json
+          --out out-g6
+
+      - name: Independent G6 conformance audit
+        run: >-
+          python runner/g6_conformance_audit.py
+          --contracts out-g5/g5_contracts.json
+          --reported out-g6/G6_CONFORMANCE.json
+          --out out-g6
+
+      - name: Show reproduction summaries
+        if: always()
+        run: |
+          test -f out-g5/G5_SUMMARY.md && cat out-g5/G5_SUMMARY.md || true
+          test -f out-g5/G5_INDEPENDENT_AUDIT.md && cat out-g5/G5_INDEPENDENT_AUDIT.md || true
+          test -f out-g5/G5_RUNTIME_BINDING_AUDIT.md && cat out-g5/G5_RUNTIME_BINDING_AUDIT.md || true
+          test -f out-g6/G6_SUMMARY.json && cat out-g6/G6_SUMMARY.json || true
+          test -f out-g6/G6_CONFORMANCE_AUDIT.json && cat out-g6/G6_CONFORMANCE_AUDIT.json || true
+
+      - name: Upload reproduction evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: g6-public-reproduction-${{ github.sha }}
+          path: |
+            out-g5/
+            out-g6/
+          if-no-files-found: warn
+          retention-days: 90
