@@ -1,6 +1,6 @@
 {
-  "authority_commit": "528719c637eeffc6d9e5bd063b9c11ce3d71ae63",
-  "policy_version": "g4-v1",
+  "authority_commit": "0548fec1755029f73889ea817c7a6c9171bcc3d0",
+  "policy_version": "g4-v1-plus-relation-amendment",
   "restricted_tokens": ["delete", "remove", "cancel"],
   "github_dispatcher_keys": ["method", "action", "operation", "command"],
   "http_methods": ["get", "post", "put", "patch", "delete", "head", "options"],
@@ -8,5 +8,6 @@
   "github_mcp_commit": "7d13a7ad6f2a17f351a6d77ce280c85ae1821f4d",
   "cloudflare_api_commit": "18fbf577213381a3da0af906dc975bc0bbb4d8f2",
   "cloudflare_mcp_commit": "1027dbd2865fc1932120db42ed53749bc30d2af0",
-  "stripe_source": "https://docs.stripe.com/mcp"
+  "stripe_source": "https://docs.stripe.com/mcp",
+  "stripe_expected_sha256": "a98827ab47d18579b5b67ba1e89eee8e0c5aa82e0b316dc4be4d11860e455df9"
 }
