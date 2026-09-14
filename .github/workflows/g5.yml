@@ -1,0 +1,40 @@
+name: g5-rac-equivalence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'runner/rac.py'
+      - 'runner/g5.py'
+      - 'tests/test_g5.py'
+      - 'config/g5_lock.json'
+      - '.github/workflows/g5.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  rac-equivalence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit and adversarial tests
+        run: python -m unittest tests/test_g5.py -v
+      - name: Run frozen real-corpus G5 gate
+        run: python runner/g5.py --lock config/g5_lock.json --out out-g5
+      - name: Show G5 summary
+        if: always()
+        run: test -f out-g5/G5_SUMMARY.md && cat out-g5/G5_SUMMARY.md || true
+      - name: Upload G5 result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: g5-results-${{ github.sha }}
+          path: out-g5/
+          if-no-files-found: warn
+          retention-days: 90
