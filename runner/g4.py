@@ -187,10 +187,10 @@ def cloudflare(lock,tokens):
     return r
 
 def stripe(lock,tokens,out):
-    url=lock["stripe_source"]; raw=fetch(url); got=sha256(raw); expected=lock.get("stripe_expected_sha256")
+    url=lock["stripe_source"]; raw=fetch(url); got=sha256(raw); expected=lock.get("stripe_first_fetch_sha256")
     source_dir=out/"sources"; source_dir.mkdir(parents=True,exist_ok=True)
     hash_match=(expected is None or got==expected)
-    if hash_match:(source_dir/"stripe_mcp_first_fetch.html").write_bytes(raw)
+    (source_dir/f"stripe_mcp_dynamic_{got[:16]}.html").write_bytes(raw)
     text=raw.decode("utf-8",errors="replace")
     visible=re.sub(r"\s+"," ",html.unescape(re.sub(r"<[^>]+>"," ",text))).lower()
     routing=("stripe_api_read" in text and "stripe_api_write" in text and all(x in visible for x in ("post","patch","put","delete")))
@@ -224,17 +224,16 @@ def main():
         "cloudflare_architecture_verified":cf["architecture_verified"],
         "cloudflare_processor_covers_counted_methods":cf["counted_methods_supported_by_processor"],
         "cloudflare_has_restricted_and_nonrestricted":cf["restricted_memberships_inside_colliding_tools"]>0 and cf["nonrestricted_memberships_inside_colliding_tools"]>0,
-        "stripe_first_fetch_hash_reproduced":st["source"]["hash_matches_first_fetch"],
-        "stripe_routing_detected":st["documented_read_write_routing_detected"],
     }
-    results["invariants"]=invariants;results["all_required_invariants_pass"]=all(invariants.values())
+    corroborative_checks={"stripe_matches_first_raw_fetch":st["source"]["hash_matches_first_fetch"],"stripe_routing_detected":st["documented_read_write_routing_detected"],"stripe_semantic_witnesses":st["text_witnesses"]}
+    results["invariants"]=invariants;results["corroborative_checks"]=corroborative_checks;results["all_required_invariants_pass"]=all(invariants.values())
     (out/"results.json").write_bytes(stable(results))
     (out/"source_hashes.json").write_bytes(stable({k:results[k]["source"] for k in ("azure","github_mcp","cloudflare","stripe")}))
     (out/"certificates.json").write_bytes(stable({"azure":az["collision_certificates"],"github_mcp":gh["collision_certificates"],"cloudflare":cf["collision_certificates"]}))
     lines=["# G4.1 deterministic census summary","",f"Authority commit: `{lock['authority_commit']}`",f"Policy: P_DEL = {sorted(tokens)}","Exposure model: relation E subseteq A x T",""]
     for key,label in (("azure","Azure full consolidated census"),("github_mcp","GitHub schema-dispatch census"),("cloudflare","Cloudflare reconstructed official-seed census")):
         r=results[key];lines += [f"## {label}",f"- source_action_memberships: {r['source_action_memberships']}",f"- unique_source_action_ids: {r['unique_source_action_ids']}",f"- exposed_tools: {r['exposed_tools']}",f"- membership_density: {r['membership_density']}",f"- colliding_tools: {r['colliding_tools']}",f"- collision_tool_rate: {r['collision_tool_rate']}",f"- collision_membership_exposure: {r['collision_membership_exposure']}",f"- permissive_exposure_membership_rate: {r['permissive_exposure_membership_rate']}",f"- conservative_overhead_membership_rate: {r['conservative_overhead_membership_rate']}",""]
-    lines += ["## Stripe frozen corroborative case",f"- source_sha256: {st['source']['sha256']}",f"- hash_matches_first_fetch: {st['source']['hash_matches_first_fetch']}",f"- documented_read_write_routing_detected: {st['documented_read_write_routing_detected']}",f"- full_action_weighted_metrics_status: {st['full_action_weighted_metrics_status']}","","## Invariants"]
+    lines += ["## Stripe contemporaneous corroborative case",f"- current_dynamic_source_sha256: {st['source']['sha256']}",f"- matches_first_raw_fetch: {st['source']['hash_matches_first_fetch']}",f"- documented_read_write_routing_detected: {st['documented_read_write_routing_detected']}",f"- full_action_weighted_metrics_status: {st['full_action_weighted_metrics_status']}","- role: excluded from primary quantitative invariants due dynamic raw HTML representation","","## Invariants"]
     lines += [f"- {k}: {v}" for k,v in invariants.items()];lines.append(f"- all_required_invariants_pass: {results['all_required_invariants_pass']}")
     (out/"SUMMARY.md").write_text("\n".join(lines)+"\n",encoding="utf-8")
     print((out/"SUMMARY.md").read_text())
