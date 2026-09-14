@@ -8,6 +8,7 @@ on:
       - 'runner/rac.py'
       - 'runner/g5.py'
       - 'runner/g5_audit.py'
+      - 'runner/g5_binding_audit.py'
       - 'tests/test_g5.py'
       - 'config/g5_lock.json'
       - '.github/workflows/g5.yml'
@@ -30,11 +31,14 @@ jobs:
         run: python runner/g5.py --lock config/g5_lock.json --out out-g5
       - name: Run independent G5.1 oracle audit
         run: python runner/g5_audit.py --out out-g5
+      - name: Run G5.2 runtime identity-binding audit
+        run: python runner/g5_binding_audit.py --lock config/g5_lock.json --out out-g5
       - name: Show G5 summaries
         if: always()
         run: |
           test -f out-g5/G5_SUMMARY.md && cat out-g5/G5_SUMMARY.md || true
           test -f out-g5/G5_INDEPENDENT_AUDIT.md && cat out-g5/G5_INDEPENDENT_AUDIT.md || true
+          test -f out-g5/G5_RUNTIME_BINDING_AUDIT.md && cat out-g5/G5_RUNTIME_BINDING_AUDIT.md || true
       - name: Upload G5 result bundle
         if: always()
         uses: actions/upload-artifact@v4
