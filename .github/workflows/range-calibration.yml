@@ -1,0 +1,330 @@
+name: package-range-calibration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/range-calibration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install scanners and Python helpers
+        run: |
+          set -euxo pipefail
+          python -m pip install --quiet packaging
+          curl -sSfL https://get.anchore.io/grype | sudo sh -s -- -b /usr/local/bin
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2
+          sudo ln -sf "$(go env GOPATH)/bin/osv-scanner" /usr/local/bin/osv-scanner
+          mkdir -p out
+          {
+            echo "utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "osv_scanner=$(osv-scanner --version 2>&1 | head -1)"
+            echo "trivy=$(trivy --version 2>&1 | head -1)"
+            echo "grype=$(grype version 2>&1 | head -20 | tr '\n' ' ')"
+          } | tee out/tool_versions.txt
+
+      - name: Freeze GitHub-reviewed advisory snapshot
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/github/advisory-database.git /tmp/ghad
+          cd /tmp/ghad
+          git sparse-checkout set advisories/github-reviewed
+          git rev-parse HEAD | tee "$GITHUB_WORKSPACE/out/ghad_commit.txt"
+
+      - name: Enumerate candidate boundaries and build one frozen SBOM
+        run: |
+          cat > /tmp/build_cases.py <<'PY'
+          import csv, glob, json, os, re, urllib.parse, urllib.request, xml.etree.ElementTree as ET
+          from pathlib import Path
+          from packaging.version import Version, InvalidVersion
+
+          ROOT='/tmp/ghad/advisories/github-reviewed'
+          OUT=Path('out'); OUT.mkdir(exist_ok=True)
+          ECOS=['npm','PyPI','Maven','Go']
+          MAX_CAND=50
+          PILOT_PER_ECO=8
+
+          def stable_version(s):
+              raw=str(s).strip()
+              q=raw[1:] if raw.startswith('v') and len(raw)>1 and raw[1].isdigit() else raw
+              try:
+                  v=Version(q)
+                  if v.is_prerelease or v.is_devrelease:
+                      return None
+                  return v
+              except InvalidVersion:
+                  return None
+
+          def registry_versions(eco, name):
+              try:
+                  if eco=='npm':
+                      if name.startswith('@'):
+                          return []  # avoid purl ambiguity in this first calibration
+                      u='https://registry.npmjs.org/'+urllib.parse.quote(name, safe='')
+                      with urllib.request.urlopen(u, timeout=15) as r: d=json.load(r)
+                      vals=list((d.get('versions') or {}).keys())
+                  elif eco=='PyPI':
+                      u='https://pypi.org/pypi/'+urllib.parse.quote(name, safe='')+'/json'
+                      with urllib.request.urlopen(u, timeout=15) as r: d=json.load(r)
+                      vals=list((d.get('releases') or {}).keys())
+                  elif eco=='Maven':
+                      if ':' not in name: return []
+                      g,a=name.split(':',1)
+                      p=g.replace('.','/')+'/'+a+'/maven-metadata.xml'
+                      u='https://repo.maven.apache.org/maven2/'+p
+                      with urllib.request.urlopen(u, timeout=15) as r: root=ET.fromstring(r.read())
+                      vals=[x.text for x in root.findall('.//version') if x.text]
+                  elif eco=='Go':
+                      def esc(s):
+                          out=[]
+                          for c in s:
+                              if c=='!': out.append('!!')
+                              elif 'A' <= c <= 'Z': out.append('!'+c.lower())
+                              else: out.append(c)
+                          return ''.join(out)
+                      u='https://proxy.golang.org/'+esc(name)+'/@v/list'
+                      with urllib.request.urlopen(u, timeout=15) as r:
+                          vals=[x.strip() for x in r.read().decode().splitlines() if x.strip()]
+                  else: return []
+              except Exception:
+                  return []
+              seen={}
+              for raw in vals:
+                  v=stable_version(raw)
+                  if v is not None:
+                      # prefer non-v spelling for scanner interoperability
+                      canon=str(v)
+                      seen[v]=canon
+              return [seen[k] for k in sorted(seen)]
+
+          def simple_boundary(rec, eco):
+              hits=[]
+              for a in rec.get('affected') or []:
+                  p=a.get('package') or {}
+                  if p.get('ecosystem') != eco: continue
+                  ranges=a.get('ranges') or []
+                  if len(ranges)!=1 or ranges[0].get('type')!='ECOSYSTEM': continue
+                  ev=ranges[0].get('events') or []
+                  if len(ev)!=2 or ev[0].get('introduced')!='0' or 'fixed' not in ev[1]: continue
+                  fixed=str(ev[1]['fixed'])
+                  if stable_version(fixed) is None: continue
+                  hits.append((p.get('name'), fixed))
+              # one unambiguous package boundary for this ecosystem/advisory
+              return hits[0] if len(hits)==1 else None
+
+          records=[]
+          for fn in glob.glob(ROOT+'/**/*.json', recursive=True):
+              try:
+                  rec=json.load(open(fn))
+              except Exception:
+                  continue
+              if rec.get('withdrawn'): continue
+              if not (rec.get('database_specific') or {}).get('github_reviewed', False): continue
+              for eco in ECOS:
+                  x=simple_boundary(rec,eco)
+                  if not x: continue
+                  name,fixed=x
+                  aliases=[z for z in (rec.get('aliases') or []) if z.startswith(('CVE-','GHSA-'))]
+                  records.append({
+                      'ecosystem':eco,'id':rec.get('id',''),'aliases':'|'.join(aliases),
+                      'package':name,'fixed':fixed,'published':rec.get('published',''),
+                      'modified':rec.get('modified','')
+                  })
+
+          # recent-first deterministic candidate census: 50/ecosystem = up to 200
+          candidates=[]
+          for eco in ECOS:
+              xs=sorted([r for r in records if r['ecosystem']==eco], key=lambda r:(r['published'],r['id']), reverse=True)
+              candidates.extend(xs[:MAX_CAND])
+          with open(OUT/'candidates.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['ecosystem','id','aliases','package','fixed','published','modified'])
+              w.writeheader(); w.writerows(candidates)
+
+          selected=[]
+          registry_cache={}
+          for eco in ECOS:
+              xs=sorted([r for r in records if r['ecosystem']==eco], key=lambda r:(r['published'],r['id']), reverse=True)
+              for r in xs:
+                  key=(eco,r['package'])
+                  if key not in registry_cache:
+                      registry_cache[key]=registry_versions(*key)
+                  vals=registry_cache[key]
+                  fv=stable_version(r['fixed'])
+                  if fv is None: continue
+                  parsed=[(stable_version(v),v) for v in vals]
+                  parsed=[x for x in parsed if x[0] is not None]
+                  eq=[raw for v,raw in parsed if v==fv]
+                  lo=[(v,raw) for v,raw in parsed if v<fv]
+                  hi=[(v,raw) for v,raw in parsed if v>fv]
+                  if not eq or not lo or not hi: continue
+                  pre=max(lo,key=lambda x:x[0])[1]
+                  post=min(hi,key=lambda x:x[0])[1]
+                  selected.append({**r,'pre':pre,'fix':eq[0],'post':post})
+                  if len([x for x in selected if x['ecosystem']==eco])>=PILOT_PER_ECO:
+                      break
+
+          with open(OUT/'selected_cases.csv','w',newline='') as f:
+              fields=['ecosystem','id','aliases','package','fixed','published','modified','pre','fix','post']
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(selected)
+
+          def purl(eco,name,ver):
+              if eco=='npm': return f'pkg:npm/{urllib.parse.quote(name,safe="")}@{urllib.parse.quote(ver,safe="")}'
+              if eco=='PyPI': return f'pkg:pypi/{urllib.parse.quote(name,safe="")}@{urllib.parse.quote(ver,safe="")}'
+              if eco=='Maven':
+                  g,a=name.split(':',1)
+                  return f'pkg:maven/{urllib.parse.quote(g,safe=".")}/{urllib.parse.quote(a,safe="")}@{urllib.parse.quote(ver,safe="")}'
+              if eco=='Go': return f'pkg:golang/{urllib.parse.quote(name,safe="/")}@{urllib.parse.quote(ver,safe="")}'
+              raise ValueError(eco)
+
+          comps=[]; seen=set()
+          for r in selected:
+              for phase in ('pre','fix','post'):
+                  ver=r[phase]; pu=purl(r['ecosystem'],r['package'],ver)
+                  k=(r['ecosystem'],r['package'],ver)
+                  if k in seen: continue
+                  seen.add(k)
+                  comps.append({'type':'library','name':r['package'],'version':ver,'purl':pu,'bom-ref':pu})
+          sbom={'bomFormat':'CycloneDX','specVersion':'1.5','version':1,
+                'metadata':{'component':{'type':'application','name':'range-calibration-corpus','version':'1'}},
+                'components':comps}
+          json.dump(sbom,open(OUT/'combined.cdx.json','w'),indent=2)
+          stats={'candidate_rows':len(candidates),'eligible_simple_boundaries':len(records),
+                 'selected_vulnerabilities':len(selected),'sbom_components':len(comps),
+                 'selected_by_ecosystem':{e:sum(1 for x in selected if x['ecosystem']==e) for e in ECOS}}
+          json.dump(stats,open(OUT/'build_stats.json','w'),indent=2)
+          print(json.dumps(stats,indent=2))
+          PY
+          python /tmp/build_cases.py | tee out/build.log
+
+      - name: Warm vulnerability databases
+        run: |
+          set +e
+          trivy image --download-db-only >/tmp/trivy_db.log 2>&1
+          grype db update >/tmp/grype_db.log 2>&1
+          set -e
+          cp /tmp/trivy_db.log out/trivy_db.log || true
+          cp /tmp/grype_db.log out/grype_db.log || true
+
+      - name: Scan the identical frozen SBOM with three engines
+        run: |
+          set +e
+          osv-scanner scan --format json out/combined.cdx.json > out/osv.json 2>out/osv.stderr
+          echo $? > out/osv.exit
+          trivy sbom --quiet --format json out/combined.cdx.json > out/trivy.json 2>out/trivy.stderr
+          echo $? > out/trivy.exit
+          grype sbom:out/combined.cdx.json -o json > out/grype.json 2>out/grype.stderr
+          echo $? > out/grype.exit
+          set -e
+          wc -c out/osv.json out/trivy.json out/grype.json
+
+      - name: Normalize target verdicts and compute boundary reversals
+        run: |
+          cat > /tmp/analyze.py <<'PY'
+          import csv, json, re
+          from collections import defaultdict, Counter
+          from pathlib import Path
+          O=Path('out')
+
+          cases=list(csv.DictReader(open(O/'selected_cases.csv')))
+          def safej(p):
+              try: return json.load(open(p))
+              except Exception: return {}
+          osv=safej(O/'osv.json'); trivy=safej(O/'trivy.json'); grype=safej(O/'grype.json')
+
+          maps={k:defaultdict(set) for k in ['osv','trivy','grype']}
+          # OSV scanner
+          for res in osv.get('results',[]) or []:
+              for ent in res.get('packages',[]) or []:
+                  p=ent.get('package') or {}; key=(p.get('name',''),str(p.get('version','')))
+                  for v in ent.get('vulnerabilities',[]) or []:
+                      if v.get('id'): maps['osv'][key].add(v['id'])
+                      maps['osv'][key].update(v.get('aliases') or [])
+          # Trivy
+          for res in trivy.get('Results',[]) or []:
+              for v in res.get('Vulnerabilities',[]) or []:
+                  key=(v.get('PkgName',''),str(v.get('InstalledVersion','')))
+                  if v.get('VulnerabilityID'): maps['trivy'][key].add(v['VulnerabilityID'])
+                  maps['trivy'][key].update(v.get('Aliases') or [])
+          # Grype
+          for m in grype.get('matches',[]) or []:
+              a=m.get('artifact') or {}; key=(a.get('name',''),str(a.get('version','')))
+              v=m.get('vulnerability') or {}
+              if v.get('id'): maps['grype'][key].add(v['id'])
+              for rv in m.get('relatedVulnerabilities',[]) or []:
+                  if rv.get('id'): maps['grype'][key].add(rv['id'])
+
+          rows=[]
+          tools=['osv','trivy','grype']
+          for c in cases:
+              targets={c['id']} | {x for x in c['aliases'].split('|') if x}
+              for phase in ['pre','fix','post']:
+                  ver=c[phase]; expected=1 if phase=='pre' else 0
+                  row={k:c[k] for k in ['ecosystem','id','package','fixed']}
+                  row.update({'phase':phase,'version':ver,'expected_vulnerable':expected})
+                  bits=[]
+                  for t in tools:
+                      found=bool(targets & maps[t].get((c['package'],ver),set()))
+                      row[t]=int(found); bits.append(int(found))
+                  row['scanner_disagreement']=int(len(set(bits))>1)
+                  rows.append(row)
+
+          fields=['ecosystem','id','package','fixed','phase','version','expected_vulnerable','osv','trivy','grype','scanner_disagreement']
+          with open(O/'verdicts.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(rows)
+
+          total=len(rows); disagree=sum(r['scanner_disagreement'] for r in rows)
+          by_phase={p:{'n':sum(r['phase']==p for r in rows),'disagree':sum(r['phase']==p and r['scanner_disagreement'] for r in rows)} for p in ['pre','fix','post']}
+          tool_error={}
+          for t in tools:
+              miss=sum(r['phase']=='pre' and r[t]==0 for r in rows)
+              stale_fix=sum(r['phase']=='fix' and r[t]==1 for r in rows)
+              stale_post=sum(r['phase']=='post' and r[t]==1 for r in rows)
+              tool_error[t]={'pre_false_safe':miss,'fix_stale_vulnerable':stale_fix,'post_stale_vulnerable':stale_post}
+
+          patterns=Counter()
+          for c in cases:
+              cr=[r for r in rows if r['id']==c['id'] and r['package']==c['package']]
+              for t in tools:
+                  pat=tuple(next(r[t] for r in cr if r['phase']==p) for p in ['pre','fix','post'])
+                  patterns[(t,str(pat))]+=1
+
+          summary={
+              'vulnerability_cases':len(cases),'version_points':total,
+              'scanner_disagreement_points':disagree,
+              'scanner_disagreement_rate':(disagree/total if total else None),
+              'by_phase':by_phase,'tool_error_against_github_reviewed_boundary':tool_error,
+              'transition_patterns':{f'{k[0]} {k[1]}':v for k,v in sorted(patterns.items())}
+          }
+          json.dump(summary,open(O/'summary.json','w'),indent=2)
+          md=['# Package range calibration summary','',f"- Vulnerability boundaries: **{len(cases)}**",f"- Version points: **{total}**",f"- Any cross-scanner disagreement: **{disagree}/{total} ({(100*disagree/total if total else 0):.1f}%)**",'','## Disagreement by boundary point']
+          for p in ['pre','fix','post']:
+              x=by_phase[p]; md.append(f"- {p}: {x['disagree']}/{x['n']}")
+          md += ['','## Errors relative to the GitHub-reviewed simple boundary']
+          for t in tools:
+              x=tool_error[t]; md.append(f"- {t}: pre-fix false-safe={x['pre_false_safe']}; at-fix stale-vulnerable={x['fix_stale_vulnerable']}; post-fix stale-vulnerable={x['post_stale_vulnerable']}")
+          md += ['','## Transition patterns (pre, fix, post)']
+          for k,v in sorted(patterns.items()): md.append(f"- {k[0]} {k[1]}: {v}")
+          open(O/'SUMMARY.md','w').write('\n'.join(md)+'\n')
+          print('\n'.join(md))
+          PY
+          python /tmp/analyze.py | tee out/analyze.log
+
+      - name: Upload frozen evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-range-calibration-${{ github.sha }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
