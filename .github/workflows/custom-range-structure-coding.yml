@@ -1,0 +1,248 @@
+name: custom-range-structure-coding
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/custom-range-structure-coding.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  code-population:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install helper
+        run: python -m pip install --quiet packaging
+      - name: Freeze Go vulnerability database
+        run: |
+          git clone --depth 1 https://go.googlesource.com/vulndb /tmp/vulndb
+          mkdir -p out
+          git -C /tmp/vulndb rev-parse HEAD | tee out/vulndb_commit.txt
+      - name: Code custom-range population
+        run: |
+          cat > /tmp/code_population.py <<'PY'
+          import csv, glob, json, re, urllib.request
+          from collections import Counter, defaultdict
+          from pathlib import Path
+          from packaging.version import Version, InvalidVersion
+
+          O=Path('out'); O.mkdir(exist_ok=True)
+
+          def V(s):
+              s=str(s).strip(); s=s[1:] if s.startswith('v') else s
+              try: return Version(s)
+              except InvalidVersion: return None
+
+          def is_stable_triplet(s):
+              return bool(re.fullmatch(r'v?\d+\.\d+\.\d+',str(s)))
+
+          def go_escape(s):
+              out=[]
+              for c in s:
+                  if c=='!': out.append('!!')
+                  elif 'A'<=c<='Z': out.append('!'+c.lower())
+                  else: out.append(c)
+              return ''.join(out)
+
+          records=[]
+          for fn in glob.glob('/tmp/vulndb/data/osv/*.json'):
+              try: d=json.load(open(fn))
+              except Exception: continue
+              records.append(d)
+
+          boundary=[]
+          vp_rows=[]
+          pkg_set=set()
+
+          for d in records:
+              goid=d.get('id','')
+              status=(d.get('database_specific') or {}).get('review_status','UNKNOWN')
+              aliases=d.get('aliases') or []
+              refs=d.get('references') or []
+              affected=d.get('affected') or []
+
+              # Native standard fixes by package elsewhere in this same GO record.
+              native_by_pkg=defaultdict(list)
+              for a in affected:
+                  p=a.get('package') or {}
+                  if p.get('ecosystem')!='Go' or not p.get('name'): continue
+                  for rg in a.get('ranges') or []:
+                      if rg.get('type')!='SEMVER': continue
+                      for e in rg.get('events') or []:
+                          if 'fixed' in e:
+                              native_by_pkg[p['name']].append(str(e['fixed']))
+
+              # Gather custom boundaries by vulnerability-package.
+              temp=defaultdict(list)
+              custom_entries=defaultdict(int)
+              for aidx,a in enumerate(affected):
+                  p=a.get('package') or {}
+                  pkg=p.get('name')
+                  if p.get('ecosystem')!='Go' or not pkg: continue
+                  customs=(a.get('ecosystem_specific') or {}).get('custom_ranges') or []
+                  if not customs: continue
+                  # focus on entries whose standard path is open-ended, the mechanism of interest
+                  std=a.get('ranges') or []
+                  open_std=any(r.get('type')=='SEMVER' and any(e.get('introduced')=='0' for e in r.get('events',[])) and not any('fixed' in e for e in r.get('events',[])) for r in std)
+                  if not open_std: continue
+                  custom_entries[pkg]+=1
+                  for cidx,cr in enumerate(customs):
+                      ev=cr.get('events') or []
+                      last_intro='0'
+                      transition_index=0
+                      for eidx,e in enumerate(ev):
+                          if 'introduced' in e:
+                              last_intro=str(e['introduced'])
+                          if 'fixed' in e:
+                              fixed=str(e['fixed'])
+                              temp[pkg].append({
+                                  'go_id':goid,'package':pkg,'review_status':status,
+                                  'aliases':'|'.join(aliases),'summary':d.get('summary',''),
+                                  'affected_index':aidx,'custom_range_index':cidx,
+                                  'event_count':len(ev),'transition_index':transition_index,
+                                  'introduced':last_intro,'fixed':fixed,
+                                  'custom_range_type':cr.get('type',''),
+                                  'native_fixed_count_same_record':len(native_by_pkg.get(pkg,[])),
+                                  'native_fixed_versions_same_record':'|'.join(native_by_pkg.get(pkg,[])),
+                                  'advisory_ref_count':sum(1 for r in refs if r.get('type')=='ADVISORY'),
+                                  'fix_ref_count':sum(1 for r in refs if r.get('type')=='FIX'),
+                                  'web_ref_count':sum(1 for r in refs if r.get('type')=='WEB'),
+                                  'has_cve':int(any(x.startswith('CVE-') for x in aliases)),
+                                  'has_ghsa':int(any(x.startswith('GHSA-') for x in aliases)),
+                              })
+                              transition_index += 1
+
+              for pkg, xs in temp.items():
+                  pkg_set.add(pkg)
+                  n=len(xs); native=len(native_by_pkg.get(pkg,[]))
+                  intro0=sum(x['introduced']=='0' for x in xs)
+                  if native and n==1: struct='HYBRID_NATIVE_PLUS_CUSTOM_SINGLE'
+                  elif native and n>1: struct='HYBRID_NATIVE_PLUS_CUSTOM_MULTI'
+                  elif (not native) and n==1 and intro0==1: struct='CUSTOM_ONLY_SINGLE_OPEN_START'
+                  elif (not native) and n==1: struct='CUSTOM_ONLY_SINGLE_BOUNDED'
+                  elif (not native) and n>1 and intro0>0: struct='CUSTOM_ONLY_MULTI_WITH_BASELINE'
+                  else: struct='CUSTOM_ONLY_MULTI_BOUNDED'
+                  for x in xs:
+                      x['vp_custom_boundary_count']=n
+                      x['vp_custom_entry_count']=custom_entries[pkg]
+                      x['structure_class']=struct
+                      x['origin_class']='OPEN_START' if x['introduced']=='0' else 'BOUNDED_BRANCH'
+                      fv=V(x['fixed'])
+                      x['fixed_syntax']='STABLE_TRIPLET' if is_stable_triplet(x['fixed']) else ('PARSEABLE_NONTRIPLET' if fv is not None else 'NON_SEMVER')
+                      boundary.append(x)
+                  vp_rows.append({
+                      'go_id':goid,'package':pkg,'review_status':status,
+                      'custom_fixed_boundaries':n,'custom_entries':custom_entries[pkg],
+                      'open_start_boundaries':intro0,'bounded_boundaries':n-intro0,
+                      'native_fixed_count_same_record':native,
+                      'native_fixed_versions_same_record':'|'.join(native_by_pkg.get(pkg,[])),
+                      'structure_class':struct,'aliases':'|'.join(aliases),
+                      'summary':d.get('summary','')
+                  })
+
+          # Resolve each unique module at the public Go proxy once.
+          proxy={}
+          for i,pkg in enumerate(sorted(pkg_set),1):
+              vals=[]; err=''
+              try:
+                  u='https://proxy.golang.org/'+go_escape(pkg)+'/@v/list'
+                  with urllib.request.urlopen(u,timeout=12) as r:
+                      vals=[x.strip() for x in r.read().decode().splitlines() if x.strip()]
+              except Exception as e:
+                  err=type(e).__name__
+              parsed=[]
+              for raw in vals:
+                  v=V(raw)
+                  if v is not None and not v.is_prerelease:
+                      parsed.append((v,raw))
+              proxy[pkg]={'available':int(bool(vals)),'versions':parsed,'raw_count':len(vals),'error':err}
+
+          for x in boundary:
+              info=proxy[x['package']]; fv=V(x['fixed'])
+              x['proxy_list_available']=info['available']
+              x['proxy_release_count']=info['raw_count']
+              x['proxy_exact_fix']=0; x['proxy_same_minor_pre']=0; x['proxy_same_minor_post']=0
+              x['nearest_pre']=''; x['nearest_post']=''
+              if fv is not None and info['versions']:
+                  same=[(v,r) for v,r in info['versions'] if (v.major,v.minor)==(fv.major,fv.minor)]
+                  eq=[r for v,r in same if v==fv]
+                  lo=[(v,r) for v,r in same if v<fv]
+                  hi=[(v,r) for v,r in same if v>fv]
+                  x['proxy_exact_fix']=int(bool(eq))
+                  x['proxy_same_minor_pre']=int(bool(lo))
+                  x['proxy_same_minor_post']=int(bool(hi))
+                  if lo: x['nearest_pre']=max(lo,key=lambda z:z[0])[1]
+                  if hi: x['nearest_post']=min(hi,key=lambda z:z[0])[1]
+
+          # Aggregate proxy characteristics into VP rows.
+          brow=defaultdict(list)
+          for x in boundary: brow[(x['go_id'],x['package'])].append(x)
+          for v in vp_rows:
+              xs=brow[(v['go_id'],v['package'])]
+              v['any_proxy_list_available']=int(any(x['proxy_list_available'] for x in xs))
+              v['all_fixes_proxy_exact']=int(all(x['proxy_exact_fix'] for x in xs))
+              v['any_fix_proxy_exact']=int(any(x['proxy_exact_fix'] for x in xs))
+              v['strict_pre_fix_post_boundaries']=sum(x['proxy_exact_fix'] and x['proxy_same_minor_pre'] and x['proxy_same_minor_post'] for x in xs)
+
+          bfields=['go_id','package','review_status','aliases','summary','structure_class','origin_class','vp_custom_boundary_count','vp_custom_entry_count','affected_index','custom_range_index','event_count','transition_index','introduced','fixed','fixed_syntax','native_fixed_count_same_record','native_fixed_versions_same_record','advisory_ref_count','fix_ref_count','web_ref_count','has_cve','has_ghsa','proxy_list_available','proxy_release_count','proxy_exact_fix','proxy_same_minor_pre','proxy_same_minor_post','nearest_pre','nearest_post']
+          with open(O/'structure_boundary_coding.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=bfields); w.writeheader(); w.writerows(boundary)
+          vfields=['go_id','package','review_status','structure_class','custom_fixed_boundaries','custom_entries','open_start_boundaries','bounded_boundaries','native_fixed_count_same_record','native_fixed_versions_same_record','any_proxy_list_available','all_fixes_proxy_exact','any_fix_proxy_exact','strict_pre_fix_post_boundaries','aliases','summary']
+          with open(O/'structure_vulnerability_package.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=vfields); w.writeheader(); w.writerows(vp_rows)
+
+          summary={
+              'boundary_rows':len(boundary),
+              'unique_go_ids':len(set(x['go_id'] for x in boundary)),
+              'unique_packages':len(set(x['package'] for x in boundary)),
+              'vulnerability_package_units':len(vp_rows),
+              'boundary_structure':dict(Counter(x['structure_class'] for x in boundary)),
+              'vp_structure':dict(Counter(x['structure_class'] for x in vp_rows)),
+              'origin_class':dict(Counter(x['origin_class'] for x in boundary)),
+              'review_status_boundary':dict(Counter(x['review_status'] for x in boundary)),
+              'review_status_vp':dict(Counter(x['review_status'] for x in vp_rows)),
+              'fixed_syntax':dict(Counter(x['fixed_syntax'] for x in boundary)),
+              'proxy':{
+                  'packages_list_available':sum(proxy[p]['available'] for p in proxy),
+                  'packages_total':len(proxy),
+                  'boundaries_exact_fix_on_proxy':sum(x['proxy_exact_fix'] for x in boundary),
+                  'boundaries_with_same_minor_pre':sum(x['proxy_same_minor_pre'] for x in boundary),
+                  'boundaries_with_same_minor_post':sum(x['proxy_same_minor_post'] for x in boundary),
+                  'strict_pre_fix_post_boundaries':sum(x['proxy_exact_fix'] and x['proxy_same_minor_pre'] and x['proxy_same_minor_post'] for x in boundary),
+              },
+              'reference_support':{
+                  'boundaries_with_upstream_advisory_ref':sum(x['advisory_ref_count']>0 for x in boundary),
+                  'boundaries_with_fix_ref':sum(x['fix_ref_count']>0 for x in boundary),
+                  'boundaries_with_web_ref':sum(x['web_ref_count']>0 for x in boundary),
+              },
+              'top_packages_by_boundaries':Counter(x['package'] for x in boundary).most_common(15),
+              'top_go_ids_by_boundaries':Counter(x['go_id'] for x in boundary).most_common(15),
+          }
+          json.dump(summary,open(O/'structure_summary.json','w'),indent=2)
+
+          md=['# Custom-range structure census','',f"- Boundaries: **{summary['boundary_rows']}**",f"- GO IDs: **{summary['unique_go_ids']}**",f"- Packages: **{summary['unique_packages']}**",f"- Vulnerability-package units: **{summary['vulnerability_package_units']}**",'', '## Vulnerability-package structural classes']
+          for k,v in sorted(summary['vp_structure'].items(), key=lambda z:-z[1]): md.append(f'- {k}: {v}')
+          md += ['', '## Boundary structural classes']
+          for k,v in sorted(summary['boundary_structure'].items(), key=lambda z:-z[1]): md.append(f'- {k}: {v}')
+          md += ['', '## Origin', *[f'- {k}: {v}' for k,v in summary['origin_class'].items()], '', '## Review status (VP units)', *[f'- {k}: {v}' for k,v in summary['review_status_vp'].items()], '', '## Go proxy observability']
+          for k,v in summary['proxy'].items(): md.append(f'- {k}: {v}')
+          md += ['', '## Reference support']
+          for k,v in summary['reference_support'].items(): md.append(f'- {k}: {v}')
+          md += ['', '## Top packages by custom fixed boundaries']
+          for p,n in summary['top_packages_by_boundaries']: md.append(f'- {p}: {n}')
+          open(O/'STRUCTURE_SUMMARY.md','w').write('\n'.join(md)+'\n')
+          print('\n'.join(md))
+          PY
+          python /tmp/code_population.py
+      - name: Upload coding bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-range-structure-coding-${{ github.sha }}
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
