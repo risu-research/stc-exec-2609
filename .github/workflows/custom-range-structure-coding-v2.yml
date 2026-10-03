@@ -1,0 +1,119 @@
+name: custom-range-structure-coding-v2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/custom-range-structure-coding-v2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  code-population:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install --quiet packaging
+      - name: Freeze source
+        run: |
+          git clone --depth 1 https://go.googlesource.com/vulndb /tmp/vulndb
+          mkdir -p out
+          git -C /tmp/vulndb rev-parse HEAD | tee out/vulndb_commit.txt
+      - name: Structural coding
+        run: |
+          cat > /tmp/census.py <<'PY'
+          import csv,glob,json,re,urllib.request
+          from pathlib import Path
+          from collections import Counter,defaultdict
+          from packaging.version import Version,InvalidVersion
+          O=Path('out')
+          def V(s):
+              s=str(s).strip(); s=s[1:] if s.startswith('v') else s
+              try:return Version(s)
+              except InvalidVersion:return None
+          def triplet(s):return bool(re.fullmatch(r'v?\d+\.\d+\.\d+',str(s)))
+          def esc(s):
+              z=[]
+              for c in s:z.append('!!' if c=='!' else ('!'+c.lower() if 'A'<=c<='Z' else c))
+              return ''.join(z)
+          docs=[]
+          for fn in glob.glob('/tmp/vulndb/data/osv/*.json'):
+              try:docs.append(json.load(open(fn)))
+              except:pass
+          B=[]; VP=[]; packages=set()
+          for d in docs:
+              goid=d.get('id',''); affected=d.get('affected') or []; aliases=d.get('aliases') or []; refs=d.get('references') or []
+              status=(d.get('database_specific') or {}).get('review_status','UNKNOWN')
+              native=defaultdict(list)
+              for a in affected:
+                  p=a.get('package') or {}; pkg=p.get('name')
+                  if p.get('ecosystem')!='Go' or not pkg:continue
+                  for rg in a.get('ranges') or []:
+                      if rg.get('type')=='SEMVER':
+                          native[pkg]+= [str(e['fixed']) for e in rg.get('events',[]) if 'fixed' in e]
+              temp=defaultdict(list); entry_count=Counter()
+              for ai,a in enumerate(affected):
+                  p=a.get('package') or {}; pkg=p.get('name')
+                  if p.get('ecosystem')!='Go' or not pkg:continue
+                  customs=(a.get('ecosystem_specific') or {}).get('custom_ranges') or []
+                  if not customs:continue
+                  std=a.get('ranges') or []
+                  open_std=any(r.get('type')=='SEMVER' and any(e.get('introduced')=='0' for e in r.get('events',[])) and not any('fixed' in e for e in r.get('events',[])) for r in std)
+                  if not open_std:continue
+                  entry_count[pkg]+=1
+                  for ci,cr in enumerate(customs):
+                      ev=cr.get('events') or []; intro='0'; ti=0
+                      for e in ev:
+                          if 'introduced' in e:intro=str(e['introduced'])
+                          if 'fixed' in e:
+                              temp[pkg].append({'go_id':goid,'package':pkg,'review_status':status,'aliases':'|'.join(aliases),'summary':d.get('summary',''),'affected_index':ai,'custom_range_index':ci,'custom_range_type':cr.get('type',''),'event_count':len(ev),'transition_index':ti,'introduced':intro,'fixed':str(e['fixed']),'native_fixed_count_same_record':len(native[pkg]),'native_fixed_versions_same_record':'|'.join(native[pkg]),'advisory_ref_count':sum(r.get('type')=='ADVISORY' for r in refs),'fix_ref_count':sum(r.get('type')=='FIX' for r in refs),'web_ref_count':sum(r.get('type')=='WEB' for r in refs),'has_cve':int(any(x.startswith('CVE-') for x in aliases)),'has_ghsa':int(any(x.startswith('GHSA-') for x in aliases))}); ti+=1
+              for pkg,xs in temp.items():
+                  packages.add(pkg); n=len(xs); n0=sum(x['introduced']=='0' for x in xs); nf=len(native[pkg])
+                  if nf and n==1:cl='HYBRID_NATIVE_PLUS_CUSTOM_SINGLE'
+                  elif nf and n>1:cl='HYBRID_NATIVE_PLUS_CUSTOM_MULTI'
+                  elif not nf and n==1 and n0:cl='CUSTOM_ONLY_SINGLE_OPEN_START'
+                  elif not nf and n==1:cl='CUSTOM_ONLY_SINGLE_BOUNDED'
+                  elif not nf and n>1 and n0:cl='CUSTOM_ONLY_MULTI_WITH_BASELINE'
+                  else:cl='CUSTOM_ONLY_MULTI_BOUNDED'
+                  for x in xs:
+                      x.update({'structure_class':cl,'origin_class':'OPEN_START' if x['introduced']=='0' else 'BOUNDED_BRANCH','vp_custom_boundary_count':n,'vp_custom_entry_count':entry_count[pkg]})
+                      fv=V(x['fixed']);x['fixed_syntax']='STABLE_TRIPLET' if triplet(x['fixed']) else ('PARSEABLE_NONTRIPLET' if fv else 'NON_SEMVER');B.append(x)
+                  VP.append({'go_id':goid,'package':pkg,'review_status':status,'structure_class':cl,'custom_fixed_boundaries':n,'custom_entries':entry_count[pkg],'open_start_boundaries':n0,'bounded_boundaries':n-n0,'native_fixed_count_same_record':nf,'native_fixed_versions_same_record':'|'.join(native[pkg]),'aliases':'|'.join(aliases),'summary':d.get('summary','')})
+          proxy={}
+          for pkg in sorted(packages):
+              vals=[];err=''
+              try:
+                  with urllib.request.urlopen('https://proxy.golang.org/'+esc(pkg)+'/@v/list',timeout=12) as r:vals=[x.strip() for x in r.read().decode().splitlines() if x.strip()]
+              except Exception as e:err=type(e).__name__
+              parsed=[]
+              for raw in vals:
+                  v=V(raw)
+                  if v and not v.is_prerelease:parsed.append((v,raw))
+              proxy[pkg]={'available':int(bool(vals)),'raw_count':len(vals),'versions':parsed,'error':err}
+          for x in B:
+              inf=proxy[x['package']];fv=V(x['fixed']);x.update({'proxy_list_available':inf['available'],'proxy_release_count':inf['raw_count'],'proxy_exact_fix':0,'proxy_same_minor_pre':0,'proxy_same_minor_post':0,'nearest_pre':'','nearest_post':''})
+              if fv and inf['versions']:
+                  same=[z for z in inf['versions'] if (z[0].major,z[0].minor)==(fv.major,fv.minor)];eq=[r for v,r in same if v==fv];lo=[z for z in same if z[0]<fv];hi=[z for z in same if z[0]>fv]
+                  x['proxy_exact_fix']=int(bool(eq));x['proxy_same_minor_pre']=int(bool(lo));x['proxy_same_minor_post']=int(bool(hi));x['nearest_pre']=max(lo,key=lambda z:z[0])[1] if lo else '';x['nearest_post']=min(hi,key=lambda z:z[0])[1] if hi else ''
+          by=defaultdict(list)
+          for x in B:by[(x['go_id'],x['package'])].append(x)
+          for v in VP:
+              xs=by[(v['go_id'],v['package'])];v['any_proxy_list_available']=int(any(x['proxy_list_available'] for x in xs));v['any_fix_proxy_exact']=int(any(x['proxy_exact_fix'] for x in xs));v['all_fixes_proxy_exact']=int(all(x['proxy_exact_fix'] for x in xs));v['strict_pre_fix_post_boundaries']=sum(x['proxy_exact_fix'] and x['proxy_same_minor_pre'] and x['proxy_same_minor_post'] for x in xs)
+          bfields=['go_id','package','review_status','aliases','summary','structure_class','origin_class','vp_custom_boundary_count','vp_custom_entry_count','affected_index','custom_range_index','custom_range_type','event_count','transition_index','introduced','fixed','fixed_syntax','native_fixed_count_same_record','native_fixed_versions_same_record','advisory_ref_count','fix_ref_count','web_ref_count','has_cve','has_ghsa','proxy_list_available','proxy_release_count','proxy_exact_fix','proxy_same_minor_pre','proxy_same_minor_post','nearest_pre','nearest_post']
+          with open(O/'structure_boundary_coding.csv','w',newline='') as f:w=csv.DictWriter(f,fieldnames=bfields);w.writeheader();w.writerows(B)
+          vfields=['go_id','package','review_status','structure_class','custom_fixed_boundaries','custom_entries','open_start_boundaries','bounded_boundaries','native_fixed_count_same_record','native_fixed_versions_same_record','any_proxy_list_available','any_fix_proxy_exact','all_fixes_proxy_exact','strict_pre_fix_post_boundaries','aliases','summary']
+          with open(O/'structure_vulnerability_package.csv','w',newline='') as f:w=csv.DictWriter(f,fieldnames=vfields);w.writeheader();w.writerows(VP)
+          S={'boundary_rows':len(B),'unique_go_ids':len(set(x['go_id'] for x in B)),'unique_packages':len(packages),'vulnerability_package_units':len(VP),'boundary_structure':dict(Counter(x['structure_class'] for x in B)),'vp_structure':dict(Counter(x['structure_class'] for x in VP)),'origin_class':dict(Counter(x['origin_class'] for x in B)),'review_status_boundary':dict(Counter(x['review_status'] for x in B)),'review_status_vp':dict(Counter(x['review_status'] for x in VP)),'fixed_syntax':dict(Counter(x['fixed_syntax'] for x in B)),'proxy':{'packages_list_available':sum(proxy[p]['available'] for p in proxy),'packages_total':len(proxy),'boundaries_exact_fix_on_proxy':sum(x['proxy_exact_fix'] for x in B),'boundaries_with_same_minor_pre':sum(x['proxy_same_minor_pre'] for x in B),'boundaries_with_same_minor_post':sum(x['proxy_same_minor_post'] for x in B),'strict_pre_fix_post_boundaries':sum(x['proxy_exact_fix'] and x['proxy_same_minor_pre'] and x['proxy_same_minor_post'] for x in B)},'reference_support':{'boundaries_with_advisory_ref':sum(x['advisory_ref_count']>0 for x in B),'boundaries_with_fix_ref':sum(x['fix_ref_count']>0 for x in B),'boundaries_with_web_ref':sum(x['web_ref_count']>0 for x in B)},'top_packages_by_boundaries':Counter(x['package'] for x in B).most_common(20)}
+          json.dump(S,open(O/'structure_summary.json','w'),indent=2)
+          print(json.dumps(S,indent=2))
+          PY
+          python /tmp/census.py | tee out/census.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: custom-range-structure-coding-v2-${{ github.sha }}
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
