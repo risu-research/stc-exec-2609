@@ -1,0 +1,217 @@
+name: custom-range-loss-pilot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/custom-range-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install scanners
+        run: |
+          set -euxo pipefail
+          python -m pip install --quiet packaging
+          curl -sSfL https://get.anchore.io/grype | sudo sh -s -- -b /usr/local/bin
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2
+          sudo ln -sf "$(go env GOPATH)/bin/osv-scanner" /usr/local/bin/osv-scanner
+          mkdir -p out
+          printf 'osv=%s\ntrivy=%s\ngrype=%s\n' "$(osv-scanner --version | head -1)" "$(trivy --version | head -1)" "$(grype version | grep '^Version:' | head -1)" > out/tool_versions.txt
+
+      - name: Fetch frozen Go vulnerability database
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 https://go.googlesource.com/vulndb /tmp/vulndb
+          git -C /tmp/vulndb rev-parse HEAD | tee out/vulndb_commit.txt
+
+      - name: Enumerate custom-range records and create fixed-boundary corpus
+        run: |
+          cat > /tmp/build.py <<'PY'
+          import csv, glob, json, re, urllib.request, urllib.parse
+          from pathlib import Path
+          from packaging.version import Version, InvalidVersion
+          O=Path('out'); O.mkdir(exist_ok=True)
+          N=30
+
+          def norm(v):
+              s=str(v).strip(); s=s[1:] if s.startswith('v') else s
+              try: return Version(s)
+              except InvalidVersion: return None
+          def simple_release(v):
+              return bool(re.fullmatch(r'v?\d+\.\d+\.\d+', str(v)))
+          def go_escape(s):
+              out=[]
+              for c in s:
+                  if c=='!': out.append('!!')
+                  elif 'A'<=c<='Z': out.append('!'+c.lower())
+                  else: out.append(c)
+              return ''.join(out)
+          cache={}
+          def versions(name):
+              if name in cache: return cache[name]
+              try:
+                  u='https://proxy.golang.org/'+go_escape(name)+'/@v/list'
+                  with urllib.request.urlopen(u,timeout=15) as r: vals=[x.strip() for x in r.read().decode().splitlines() if x.strip()]
+              except Exception:
+                  vals=[]
+              xs=[]
+              for raw in vals:
+                  if not simple_release(raw): continue
+                  q=norm(raw)
+                  if q and not q.is_prerelease: xs.append((q,raw))
+              xs=sorted(dict((q,raw) for q,raw in xs).items())
+              cache[name]=xs
+              return xs
+
+          raw=[]
+          for fn in glob.glob('/tmp/vulndb/data/osv/*.json'):
+              try: d=json.load(open(fn))
+              except: continue
+              aliases=d.get('aliases') or []
+              for a in d.get('affected') or []:
+                  p=a.get('package') or {}
+                  if p.get('ecosystem')!='Go' or not p.get('name'): continue
+                  customs=(a.get('ecosystem_specific') or {}).get('custom_ranges') or []
+                  standard=a.get('ranges') or []
+                  # focus on information that exists only in custom ranges while standard SEMVER is open-ended
+                  open_std=any(r.get('type')=='SEMVER' and any(e.get('introduced')=='0' for e in r.get('events',[])) and not any('fixed' in e for e in r.get('events',[])) for r in standard)
+                  if not open_std: continue
+                  for cr in customs:
+                      ev=cr.get('events') or []
+                      for i,e in enumerate(ev):
+                          if 'fixed' not in e: continue
+                          fixed=str(e['fixed'])
+                          if not simple_release(fixed): continue
+                          intro='0'
+                          for prev in reversed(ev[:i]):
+                              if 'introduced' in prev:
+                                  intro=str(prev['introduced']); break
+                          raw.append({'go_id':d.get('id',''),'aliases':'|'.join(aliases),'package':p['name'],'introduced':intro,'fixed':fixed,'summary':d.get('summary','')})
+
+          # newest IDs first, then deterministic; one boundary per Go record
+          seen=set(); boundaries=[]
+          for r in sorted(raw,key=lambda x:x['go_id'],reverse=True):
+              if r['go_id'] in seen: continue
+              fixed=norm(r['fixed']); xs=versions(r['package'])
+              if not fixed or not xs: continue
+              same=[(v,rawv) for v,rawv in xs if (v.major,v.minor)==(fixed.major,fixed.minor)]
+              eq=[rawv for v,rawv in same if v==fixed]
+              lo=[(v,rawv) for v,rawv in same if v<fixed]
+              hi=[(v,rawv) for v,rawv in same if v>fixed]
+              if not eq or not lo or not hi: continue
+              # if custom lower bound exists, ensure chosen pre is within it
+              pre=max(lo,key=lambda x:x[0]); post=min(hi,key=lambda x:x[0])
+              iv=norm(r['introduced']) if r['introduced']!='0' else None
+              if iv and pre[0] < iv: continue
+              boundaries.append({**r,'pre':pre[1],'fix':eq[0],'post':post[1]})
+              seen.add(r['go_id'])
+              if len(boundaries)>=N: break
+
+          with open(O/'custom_range_candidates.csv','w',newline='') as f:
+              fields=['go_id','aliases','package','introduced','fixed','pre','fix','post','summary']
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows(boundaries)
+
+          comps=[]; seencomp=set()
+          for r in boundaries:
+              for phase in ('pre','fix','post'):
+                  rawv=r[phase]; pv=rawv if rawv.startswith('v') else 'v'+rawv
+                  k=(r['package'],pv)
+                  if k in seencomp: continue
+                  seencomp.add(k)
+                  pu='pkg:golang/'+urllib.parse.quote(r['package'],safe='/')+'@'+urllib.parse.quote(pv,safe='')
+                  comps.append({'type':'library','name':r['package'],'version':pv,'purl':pu,'bom-ref':pu})
+          sb={'bomFormat':'CycloneDX','specVersion':'1.5','version':1,'metadata':{'component':{'type':'application','name':'custom-range-loss-corpus','version':'1'}},'components':comps}
+          json.dump(sb,open(O/'corpus.cdx.json','w'),indent=2)
+          stats={'raw_custom_fixed_boundaries':len(raw),'selected_boundaries':len(boundaries),'unique_components':len(comps)}
+          json.dump(stats,open(O/'build_stats.json','w'),indent=2); print(json.dumps(stats,indent=2))
+          PY
+          python /tmp/build.py | tee out/build.log
+
+      - name: Warm databases and scan identical SBOM
+        run: |
+          set +e
+          trivy image --download-db-only >/tmp/trivydb 2>&1
+          grype db update >/tmp/grypedb 2>&1
+          osv-scanner scan --format json out/corpus.cdx.json > out/osv.json 2>out/osv.stderr
+          echo $? > out/osv.exit
+          trivy sbom --quiet --format json out/corpus.cdx.json > out/trivy.json 2>out/trivy.stderr
+          echo $? > out/trivy.exit
+          grype sbom:out/corpus.cdx.json -o json > out/grype.json 2>out/grype.stderr
+          echo $? > out/grype.exit
+          set -e
+
+      - name: Normalize and measure information-loss consequences
+        run: |
+          cat > /tmp/an.py <<'PY'
+          import csv,json
+          from collections import defaultdict,Counter
+          from pathlib import Path
+          O=Path('out')
+          cases=list(csv.DictReader(open(O/'custom_range_candidates.csv')))
+          def J(n):
+              try:return json.load(open(O/n))
+              except:return {}
+          D={'osv':defaultdict(set),'trivy':defaultdict(set),'grype':defaultdict(set)}
+          def nk(name,v): return (name,str(v).lstrip('v'))
+          osv=J('osv.json')
+          for res in osv.get('results',[]) or []:
+              for x in res.get('packages',[]) or []:
+                  p=x.get('package') or {}; k=nk(p.get('name',''),p.get('version',''))
+                  for q in x.get('vulnerabilities',[]) or []:
+                      if q.get('id'): D['osv'][k].add(q['id'])
+                      D['osv'][k].update(q.get('aliases') or [])
+          tri=J('trivy.json')
+          for res in tri.get('Results',[]) or []:
+              for q in res.get('Vulnerabilities',[]) or []:
+                  k=nk(q.get('PkgName',''),q.get('InstalledVersion',''))
+                  if q.get('VulnerabilityID'):D['trivy'][k].add(q['VulnerabilityID'])
+                  D['trivy'][k].update(q.get('Aliases') or [])
+          gry=J('grype.json')
+          for m in gry.get('matches',[]) or []:
+              a=m.get('artifact') or {}; k=nk(a.get('name',''),a.get('version',''))
+              v=m.get('vulnerability') or {}
+              if v.get('id'):D['grype'][k].add(v['id'])
+              for q in m.get('relatedVulnerabilities',[]) or []:
+                  if q.get('id'):D['grype'][k].add(q['id'])
+          rows=[]; tools=['osv','trivy','grype']
+          for c in cases:
+              ids={c['go_id']}|{x for x in c['aliases'].split('|') if x}
+              for ph in ('pre','fix','post'):
+                  ver=c[ph]; r={'go_id':c['go_id'],'package':c['package'],'fixed':c['fixed'],'phase':ph,'version':ver,'expected':1 if ph=='pre' else 0}
+                  for t in tools:r[t]=int(bool(ids & D[t].get(nk(c['package'],ver),set())))
+                  r['disagree']=int(len({r[t] for t in tools})>1);rows.append(r)
+          fields=['go_id','package','fixed','phase','version','expected','osv','trivy','grype','disagree']
+          with open(O/'verdicts.csv','w',newline='') as f:w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
+          S={'cases':len(cases),'points':len(rows),'disagreement':sum(x['disagree'] for x in rows),'tools':{}}
+          for t in tools:
+              S['tools'][t]={
+                'pre_false_safe':sum(x['phase']=='pre' and x[t]==0 for x in rows),
+                'fix_false_vulnerable':sum(x['phase']=='fix' and x[t]==1 for x in rows),
+                'post_false_vulnerable':sum(x['phase']=='post' and x[t]==1 for x in rows)}
+          S['case_level_post_patch_persistence']={t:sum(any(x[t]==1 and x['phase'] in ('fix','post') for x in rows if x['go_id']==c['go_id']) for c in cases) for t in tools}
+          json.dump(S,open(O/'summary.json','w'),indent=2)
+          print(json.dumps(S,indent=2))
+          print('\nPOST-PATCH CASES')
+          for c in cases:
+              rr=[x for x in rows if x['go_id']==c['go_id']]
+              if any(x['phase'] in ('fix','post') and any(x[t] for t in tools) for x in rr):
+                  print(c['go_id'],c['package'],c['fixed'],[(x['phase'],x['osv'],x['trivy'],x['grype']) for x in rr])
+          PY
+          python /tmp/an.py | tee out/analyze.log
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-range-loss-${{ github.sha }}
+          path: out/
+          retention-days: 30
