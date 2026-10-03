@@ -1,0 +1,32 @@
+name: osv-newapi-normalization
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/osv-newapi-normalization.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test module-name normalization against OSV querybatch
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          names=['github.com/QuantumNous/new-api','github.com/quantumnous/new-api']
+          vers=['0.9.5','v0.9.5','0.9.6','v0.9.6']
+          qs=[]; meta=[]
+          for n in names:
+            for v in vers:
+              qs.append({'version':v,'package':{'name':n,'ecosystem':'Go'}}); meta.append((n,v))
+          req=urllib.request.Request('https://api.osv.dev/v1/querybatch',data=json.dumps({'queries':qs}).encode(),headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(req) as r: x=json.load(r)
+          for m,res in zip(meta,x['results']):
+            ids=[v.get('id') for v in res.get('vulns',[])]
+            print(m[0],m[1],'GO-2025-4154' in ids, len(ids))
+          PY
