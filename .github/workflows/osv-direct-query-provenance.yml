@@ -1,0 +1,64 @@
+name: osv-direct-query-provenance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/osv-direct-query-provenance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Direct OSV API queries
+        run: |
+          mkdir -p out
+          cat > /tmp/q.py <<'PY'
+          import json, urllib.request
+          cases = [
+            ('GO-2026-6596','github.com/cilium/cilium','1.18.10','1.18.11'),
+            ('GO-2026-6568','github.com/gardener/gardener','1.144.1','1.144.2'),
+            ('GO-2026-6568','github.com/gardener/gardener','1.143.2','1.143.3'),
+            ('GO-2026-6565','github.com/hatchet-dev/hatchet','0.91.0','0.91.1'),
+            ('GO-2025-4154','github.com/QuantumNous/new-api','0.9.5','0.9.6'),
+            ('GO-2025-3648','github.com/rancher/steve','0.3.2','0.3.3'),
+            ('GO-2024-3051','github.com/layer5io/meshery','0.7.21','0.7.22'),
+            ('GO-2024-3050','github.com/layer5io/meshery','0.7.21','0.7.22'),
+            ('GO-2024-2530','go.etcd.io/etcd/v3','3.4.9','3.4.10'),
+            ('GO-2024-2530','go.etcd.io/etcd/v3','3.3.22','3.3.23'),
+            ('GO-2024-2529','go.etcd.io/etcd/v3','3.4.9','3.4.10'),
+            ('GO-2024-2529','go.etcd.io/etcd/v3','3.3.22','3.3.23'),
+            ('GO-2024-2528','go.etcd.io/etcd/v3','3.4.9','3.4.10'),
+            ('GO-2024-2528','go.etcd.io/etcd/v3','3.3.22','3.3.23'),
+          ]
+          queries=[]; meta=[]
+          for goid,pkg,pre,fix in cases:
+            for point,ver in [('pre',pre),('fix',fix)]:
+              for variant,v in [('plain',ver),('vprefix','v'+ver if not ver.startswith('v') else ver)]:
+                queries.append({'version':v,'package':{'name':pkg,'ecosystem':'Go'}})
+                meta.append({'go_id':goid,'package':pkg,'point':point,'variant':variant,'version':v})
+          body=json.dumps({'queries':queries}).encode()
+          req=urllib.request.Request('https://api.osv.dev/v1/querybatch',data=body,headers={'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=60) as r:
+            resp=json.loads(r.read().decode())
+          out=[]
+          for m,res in zip(meta,resp.get('results',[])):
+            ids=[v.get('id') for v in res.get('vulns',[])]
+            aliases=[]
+            for v in res.get('vulns',[]): aliases += v.get('aliases',[]) or []
+            out.append({**m,'matched_go_id': int(m['go_id'] in ids or m['go_id'] in aliases),'ids':ids})
+          json.dump({'meta_results':out,'raw':resp},open('out/direct_query.json','w'),indent=2)
+          print(json.dumps(out,indent=2))
+          PY
+          python /tmp/q.py | tee out/direct_query.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osv-direct-query-provenance-${{ github.sha }}
+          path: out/
+          retention-days: 30
