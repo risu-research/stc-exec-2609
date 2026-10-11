@@ -1,0 +1,81 @@
+name: runtime-check
+on:
+  push:
+    branches: [run/261010-r1]
+    paths: [.github/workflows/runtime-check.yml]
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - name: Prepare pinned public inputs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p out
+          nproc; free -h; df -h
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd xz-utils >/dev/null
+          git init -q upstream
+          git -C upstream fetch -q --depth=1 https://github.com/ClickHouse/ClickBench.git 1ce27b281d8a73aad75458b0e04a2b77705aac53
+          git -C upstream checkout -q --detach FETCH_HEAD
+          test "$(git -C upstream rev-parse HEAD)" = 1ce27b281d8a73aad75458b0e04a2b77705aac53
+          docker pull clickhouse/clickhouse-server:26.7.1.1315
+          docker pull clickhouse/clickhouse-server:26.8.1.2041
+      - name: Build single shared SF1 Native dataset
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p upstream/versions/prepare-data/data
+          cat > clickhouse-wrapper <<'SH'
+          #!/usr/bin/env bash
+          exec docker run --rm --entrypoint clickhouse clickhouse/clickhouse-server:26.7.1.1315 "$@"
+          SH
+          chmod +x clickhouse-wrapper
+          export CLICKHOUSE="$GITHUB_WORKSPACE/clickhouse-wrapper"
+          export SSB_SCALE=1
+          timeout 1500 bash upstream/versions/prepare-data/ssb.sh
+          test -s upstream/versions/prepare-data/data/ssb.native.zst
+          sha256sum upstream/versions/prepare-data/data/ssb.native.zst > out/shared_input.sha256
+          df -h
+      - name: Execute official version-paired benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DATA="$GITHUB_WORKSPACE/upstream/versions/prepare-data/data"
+          export LOAD_DATASETS=ssb
+          cd upstream/versions
+          for V in 26.7.1.1315 26.8.1.2041; do
+            mkdir -p "$GITHUB_WORKSPACE/out/$V"
+            timeout 3000 ./run-version.sh "$V" "clickhouse/clickhouse-server:$V" all > "$GITHUB_WORKSPACE/out/$V/runner.stdout.log" 2> "$GITHUB_WORKSPACE/out/$V/runner.stderr.log"
+            test -s "results/$V.json"
+            cp "results/$V.json" "$GITHUB_WORKSPACE/out/$V/official.json"
+            C=$(sudo docker ps --format '{{.Names}}' | head -n1)
+            test -n "$C"
+            sudo docker exec "$C" clickhouse-client -q 'SELECT version(),count(),sum(LO_REVENUE),sum(cityHash64(LO_ORDERKEY,LO_LINENUMBER,LO_REVENUE,F_YEAR)) FROM ssb.lineorder_flat FORMAT TSV' > "$GITHUB_WORKSPACE/out/$V/fingerprint.tsv"
+            sudo docker exec "$C" clickhouse-client -q "SELECT partition,count(),sum(rows),sum(bytes_on_disk),sum(marks) FROM system.parts WHERE active AND database='ssb' GROUP BY partition ORDER BY partition FORMAT TSV" > "$GITHUB_WORKSPACE/out/$V/parts.tsv"
+            sudo docker exec "$C" clickhouse-client -q "SELECT name,value FROM system.settings WHERE name IN ('compatibility','use_query_condition_cache','optimize_move_to_prewhere','use_skip_indexes_on_data_read','max_threads') ORDER BY name FORMAT TSV" > "$GITHUB_WORKSPACE/out/$V/settings.tsv"
+            Q=0
+            while IFS= read -r SQL; do
+              test -z "$SQL" && continue
+              Q=$((Q+1))
+              SQL=$(echo "$SQL" | sed 's/;[[:space:]]*$//')
+              sudo docker exec "$C" clickhouse-client -d ssb -q "EXPLAIN indexes=1 $SQL" > "$GITHUB_WORKSPACE/out/$V/plan_$Q.txt" 2>&1 || true
+            done < queries/ssb.sql
+            df -h
+          done
+          cut -f2- "$GITHUB_WORKSPACE/out/26.7.1.1315/fingerprint.tsv" > "$GITHUB_WORKSPACE/out/old_fingerprint.txt"
+          cut -f2- "$GITHUB_WORKSPACE/out/26.8.1.2041/fingerprint.tsv" > "$GITHUB_WORKSPACE/out/new_fingerprint.txt"
+          diff -u "$GITHUB_WORKSPACE/out/old_fingerprint.txt" "$GITHUB_WORKSPACE/out/new_fingerprint.txt"
+          echo pass > "$GITHUB_WORKSPACE/out/status.txt"
+      - name: Retain small evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-output
+          path: out/
+          retention-days: 7
+          if-no-files-found: warn
