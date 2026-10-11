@@ -48,23 +48,51 @@ jobs:
           export DATA="$GITHUB_WORKSPACE/upstream/versions/prepare-data/data"
           export LOAD_DATASETS=ssb
           cd upstream/versions
+          cp run-version.sh run-version.persist.sh
+          sed -i '/trap cleanup EXIT/d' run-version.persist.sh
           for V in 26.7.1.1315 26.8.1.2041; do
             mkdir -p "$GITHUB_WORKSPACE/out/$V"
-            timeout 3000 ./run-version.sh "$V" "clickhouse/clickhouse-server:$V" all > "$GITHUB_WORKSPACE/out/$V/runner.stdout.log" 2> "$GITHUB_WORKSPACE/out/$V/runner.stderr.log"
+            timeout 3000 ./run-version.persist.sh "$V" "clickhouse/clickhouse-server:$V" all > "$GITHUB_WORKSPACE/out/$V/runner.stdout.log" 2> "$GITHUB_WORKSPACE/out/$V/runner.stderr.log"
             test -s "results/$V.json"
             cp "results/$V.json" "$GITHUB_WORKSPACE/out/$V/official.json"
             C=$(sudo docker ps --format '{{.Names}}' | head -n1)
             test -n "$C"
-            sudo docker exec "$C" clickhouse-client -q 'SELECT version(),count(),sum(LO_REVENUE),sum(cityHash64(LO_ORDERKEY,LO_LINENUMBER,LO_REVENUE,F_YEAR)) FROM ssb.lineorder_flat FORMAT TSV' > "$GITHUB_WORKSPACE/out/$V/fingerprint.tsv"
-            sudo docker exec "$C" clickhouse-client -q "SELECT partition,count(),sum(rows),sum(bytes_on_disk),sum(marks) FROM system.parts WHERE active AND database='ssb' GROUP BY partition ORDER BY partition FORMAT TSV" > "$GITHUB_WORKSPACE/out/$V/parts.tsv"
-            sudo docker exec "$C" clickhouse-client -q "SELECT name,value FROM system.settings WHERE name IN ('compatibility','use_query_condition_cache','optimize_move_to_prewhere','use_skip_indexes_on_data_read','max_threads') ORDER BY name FORMAT TSV" > "$GITHUB_WORKSPACE/out/$V/settings.tsv"
+            sudo docker exec "$C" clickhouse client -q 'SELECT version(),count(),sum(LO_REVENUE),sum(cityHash64(LO_ORDERKEY,LO_LINENUMBER,LO_REVENUE,F_YEAR)) FROM ssb.lineorder_flat FORMAT TSV' > "$GITHUB_WORKSPACE/out/$V/fingerprint.tsv"
+            sudo docker exec "$C" clickhouse client -q "SELECT partition,count(),sum(rows),sum(bytes_on_disk),sum(marks) FROM system.parts WHERE active AND database='ssb' GROUP BY partition ORDER BY partition FORMAT TSV" > "$GITHUB_WORKSPACE/out/$V/parts.tsv"
+            sudo docker exec "$C" clickhouse client -q "SELECT name,value FROM system.settings WHERE name IN ('compatibility','use_query_condition_cache','optimize_move_to_prewhere','use_skip_indexes_on_data_read','max_threads') ORDER BY name FORMAT TSV" > "$GITHUB_WORKSPACE/out/$V/settings.tsv"
             Q=0
             while IFS= read -r SQL; do
               test -z "$SQL" && continue
               Q=$((Q+1))
               SQL=$(echo "$SQL" | sed 's/;[[:space:]]*$//')
-              sudo docker exec "$C" clickhouse-client -d ssb -q "EXPLAIN indexes=1 $SQL" > "$GITHUB_WORKSPACE/out/$V/plan_$Q.txt" 2>&1 || true
+              sudo docker exec "$C" clickhouse client -d ssb -q "EXPLAIN indexes=1 $SQL" > "$GITHUB_WORKSPACE/out/$V/plan_$Q.txt" 2>&1 || true
             done < queries/ssb.sql
+            if test "$V" = 26.8.1.2041; then
+              printf 'query\tround\tsetting\tstatus\tclient_time\n' > "$GITHUB_WORKSPACE/out/$V/controls.tsv"
+              for ROUND in 1 2 3; do
+                for Q in 1 2 3 4 5 6 7; do
+                  SQL=$(sed -n "$Q"p queries/ssb.sql | sed 's/;[[:space:]]*$//')
+                  for MODE in baseline cache_off prewhere_off skip_off single_thread; do
+                    EXTRA=''
+                    case "$MODE" in
+                      cache_off) EXTRA=' SETTINGS use_query_condition_cache=0';;
+                      prewhere_off) EXTRA=' SETTINGS optimize_move_to_prewhere=0';;
+                      skip_off) EXTRA=' SETTINGS use_skip_indexes_on_data_read=0';;
+                      single_thread) EXTRA=' SETTINGS max_threads=1';;
+                    esac
+                    set +e
+                    TXT=$(timeout 90 sudo docker exec "$C" clickhouse client --database ssb --time --format=Null --query "$SQL$EXTRA" 2>&1)
+                    RC=$?
+                    set -e
+                    TXT=$(echo "$TXT" | tr '\r\n\t' '   ' | cut -c1-200)
+                    printf '%s\t%s\t%s\t%s\t%s\n' "$Q" "$ROUND" "$MODE" "$RC" "$TXT" >> "$GITHUB_WORKSPACE/out/$V/controls.tsv"
+                  done
+                done
+              done
+            fi
+            sudo docker exec "$C" clickhouse client -q 'SYSTEM FLUSH LOGS' >/dev/null 2>&1 || true
+            sudo docker exec "$C" clickhouse client -q "SELECT query_id,query_duration_ms,read_rows,read_bytes,ProfileEvents FROM system.query_log WHERE type='QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 500 FORMAT JSONEachRow" > "$GITHUB_WORKSPACE/out/$V/query_log.jsonl" 2>&1 || true
+            sudo docker rm -f "$C" >/dev/null 2>&1 || true
             df -h
           done
           cut -f2- "$GITHUB_WORKSPACE/out/26.7.1.1315/fingerprint.tsv" > "$GITHUB_WORKSPACE/out/old_fingerprint.txt"
