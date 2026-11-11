@@ -428,8 +428,14 @@ jobs:
               n=units(i)
               confirmed=len(counts[y][i])
               missing=bad[(y,i)]
+              if confirmed>n:
+                  return {"lower":None,"upper":None,"raw_fraction":round(confirmed/n,5),
+                    "invalidity":"apartment_labels_exceed_current_registered_units",
+                    "confirmed_distinct_units":confirmed,"unidentified_apartment_rows":missing,
+                    "registered_class_a_current":n}
               upper=min(n,confirmed+missing)
               return {"lower":round(confirmed/n,5),"upper":round(upper/n,5),
+                 "raw_fraction":round(confirmed/n,5),"invalidity":None,
                  "confirmed_distinct_units":confirmed,"unidentified_apartment_rows":missing,
                  "registered_class_a_current":n}
           eight_rows=[{"case_alias":alias(i),"selected":i in selected[y],
@@ -437,13 +443,21 @@ jobs:
              "season_2_violations":viol[2024].get(i,0),
              "borough":boro(i),"apartment_fraction_bounds":apt_bounds(i)}
                for i in eight_cases]
-          eight_rows.sort(key=lambda a:(-a["apartment_fraction_bounds"]["lower"],a["case_alias"]))
+          eight_rows.sort(key=lambda a:(a["apartment_fraction_bounds"]["lower"] is None,-(a["apartment_fraction_bounds"]["lower"] or 0),a["case_alias"]))
           selrow=next(r for r in eight_rows if r["case_alias"]==alias(s8))
           selected_rank=next(k+1 for k,r in enumerate(eight_rows) if r["case_alias"]==alias(s8))
           better_lower=sum(1 for r in eight_rows if not r["selected"] and
-            r["apartment_fraction_bounds"]["lower"]>selrow["apartment_fraction_bounds"]["lower"])
+            r["apartment_fraction_bounds"]["lower"] is not None and r["apartment_fraction_bounds"]["lower"]>selrow["apartment_fraction_bounds"]["lower"])
           definite_outrank=sum(1 for r in eight_rows if not r["selected"] and
-            r["apartment_fraction_bounds"]["lower"]>selrow["apartment_fraction_bounds"]["upper"])
+            r["apartment_fraction_bounds"]["lower"] is not None and r["apartment_fraction_bounds"]["lower"]>selrow["apartment_fraction_bounds"]["upper"])
+          valid_eight=[r for r in eight_rows if r["apartment_fraction_bounds"]["lower"] is not None]
+          invalid_eight=[r for r in eight_rows if r["apartment_fraction_bounds"]["lower"] is None]
+          highest_valid=max(r["apartment_fraction_bounds"]["lower"] for r in valid_eight)
+          selected_at_highest=selrow["apartment_fraction_bounds"]["lower"]==highest_valid
+          top_tie_count=sum(r["apartment_fraction_bounds"]["lower"]==highest_valid for r in valid_eight)
+          assert len(eight_rows)==len(valid_eight)+len(invalid_eight)
+          assert all(r["apartment_fraction_bounds"]["lower"] is None or
+                     r["apartment_fraction_bounds"]["lower"]<=1.0 for r in eight_rows)
           out["case_2025_legal_reconstruction"]["post_7A_corrected_boundary"]={
            "FY25_7A_documented_9_score_building_removed":alias(t9),
            "remaining_proxy_eligible":len(corrected_pool),
@@ -455,6 +469,9 @@ jobs:
            "selected_score_8_alias":alias(s8),
            "selected_score_8_apartment_fraction_current_proxy":selrow["apartment_fraction_bounds"],
            "selected_score_8_rank_by_current_confirmed_fraction":selected_rank,
+           "selected_at_highest_valid_current_apartment_fraction":selected_at_highest,
+           "valid_cases_tied_at_highest_fraction":top_tie_count,
+           "invalid_ratio_denominator_case_aliases":[r["case_alias"] for r in invalid_eight],
            "unselected_8_with_higher_confirmed_fraction":better_lower,
            "unselected_8_definitely_outranking_under_missing_row_bounds":definite_outrank,
            "score_8_priority_records":eight_rows,
