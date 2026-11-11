@@ -1,0 +1,416 @@
+name: HSP geographic opportunity and decision legal status audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hsp-geo-legal-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  exact-risk-overlap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconstruct frozen risk support and legal tie-priority proxies
+        shell: bash
+        run: |
+          python - <<'PY'
+          """HSP threshold overlap / positivity audit.
+          Reconstructs selection risk proxy from official live NYC datasets.
+          Primary target: exactly equal two-season heating violation score at selection boundary.
+          Only aggregate and deterministic pseudonymous summaries are published.
+          No causal-effect, sharp-RD, or actual as-of-2024 registry assertions.
+          """
+          import collections, datetime, hashlib, json, math, pathlib, re, time, urllib.parse, urllib.error, urllib.request
+          URL="https://data.cityofnewyork.us/resource/"
+          HEAD={"User-Agent":"PublicHSPBoundaryOverlapResearch/1.0"}
+          OUT=pathlib.Path("out/hsp_geo_legal");OUT.mkdir(parents=True,exist_ok=True)
+          def get(ds,params):
+              url=URL+ds+".json?"+urllib.parse.urlencode(params)
+              for attempt in range(4):
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(url,headers=HEAD),timeout=135) as response:
+                          arr=json.load(response)
+                          if not isinstance(arr,list):raise ValueError("Socrata non-list response")
+                          return arr
+                  except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError):
+                      if attempt==3:raise
+                      time.sleep(3*(attempt+1))
+          def blocks(xs,n):
+              xs=sorted(xs)
+              for j in range(0,len(xs),n):yield xs[j:j+n]
+          def alias(b):return hashlib.sha256(("rank-2024:"+str(b)).encode()).hexdigest()[:10]
+          def season_map(ds,key,field,st,en,extra,agg):
+              wh=f"{field} >= '{st}T00:00:00' AND {field} < '{en}T00:00:00'"+extra
+              rows=get(ds,{"$select":key+","+agg+" as n","$where":wh,"$group":key,"$limit":50000})
+              if len(rows)>=50000:raise RuntimeError("Potential aggregate truncation: "+ds)
+              return {str(r[key]):int(r["n"]) for r in rows}
+          years={2022:("2022-10-01","2023-06-01"),
+                 2023:("2023-10-01","2024-06-01"),
+                 2024:("2024-10-01","2025-06-01")}
+          viol={};apts={}
+          for y,(start,end) in years.items():
+              viol[y]=season_map("wvxf-dwi5","buildingid","novissueddate",start,end,
+                 " AND (novdescription like '%27-2029%' OR novdescription like '%27-2028%')","count(*)")
+              apts[y]=season_map("ygpa-z7cr","building_id","received_date",start,end,
+                 " AND major_category='HEAT/HOT WATER' AND apartment is not null","count(distinct apartment)")
+              print("SEASON_LOADED",y,len(viol[y]),len(apts[y]),flush=True)
+          hsp=get("h4mf-f24e",{"$limit":500})
+          selected={y:{str(r["building_id"]) for r in hsp if str(r.get("program_start_date","")).startswith(str(y))} for y in (2024,2025)}
+          assert all(len(s)==50 for s in selected.values())
+          aep=get("hcir-3275",{"$select":"building_id,aep_start_date,discharge_date","$limit":6000})
+          if len(aep)>=6000:raise RuntimeError("AEP list truncated")
+          pools={};class_screen={}
+          for y in (2024,2025):
+              first=y-2;last=y-1
+              both=set(viol[first])&set(viol[last])&set(apts[first])&set(apts[last])
+              elig={b for b in both if viol[first][b]+viol[last][b]>=4 and
+                  apts[first][b]>=2 and apts[last][b]>=2}
+              date=f"{y}-07-01"
+              active={str(r["building_id"]) for r in aep if r.get("aep_start_date")
+                 and str(r["aep_start_date"])[:10]<=date and
+                 (not r.get("discharge_date") or str(r["discharge_date"])[:10]>date)}
+              pools[y]={"qualified":elig,"after_AEP":elig-active}
+          allids=set.union(*(z["after_AEP"] for z in pools.values()))
+          reg={}
+          for chunk in blocks(allids,65):
+              a=get("kj4p-ruqc",{"$select":"buildingid,legalclassa,boro,communityboard,housenumber,streetname,managementprogram","$where":"buildingid in ("+",".join(chunk)+")","$limit":1000})
+              if len(a)>=1000:raise RuntimeError("Building registry query truncated")
+              reg.update({str(z["buildingid"]):z for z in a})
+          print("REGISTRY_QUERY_COMPLETE",len(reg),flush=True)
+          def units(i):
+              try:return int(reg.get(i,{}).get("legalclassa","0"))
+              except (TypeError,ValueError):return 0
+          boroughmap={"1":"MN","2":"BX","3":"BK","4":"QN","5":"SI","MANHATTAN":"MN","BRONX":"BX","BROOKLYN":"BK","QUEENS":"QN","STATEN ISLAND":"SI"}
+          def boro(i):
+              v=str(reg.get(i,{}).get("boro","")).upper().strip()
+              return boroughmap.get(v,v if v in ("MN","BX","BK","QN","SI") else None)
+          for y,s in pools.items():
+              after={b for b in s["after_AEP"] if units(b)>=3}
+              # Hold two complete input definitions separate; scenario B stricter
+              prior_main={str(r["building_id"]) for r in hsp if str(r.get("program_start_date","")).startswith(("2022",) if y==2024 else ("2022","2024")) and str(r.get("current_status","")).upper()=="ACTIVE"}
+              prior_strict={str(r["building_id"]) for r in hsp if str(r.get("program_start_date",""))[:4]<str(y) and str(r.get("current_status","")).upper()=="ACTIVE"}
+              s.update({"after_class":after,"prior_main":prior_main,"prior_strict":prior_strict,
+                "main":after-prior_main,"strict":after-prior_strict})
+          # Compute exact score distributions for all scenarios, do not tune to selected labels
+          def build(year,pool):
+              score=lambda i:viol[year-2].get(i,0)+viol[year-1].get(i,0)
+              rank=sorted(pool,key=lambda i:(-score(i),i))
+              if len(rank)<50:raise RuntimeError("fewer than 50 eligible candidates")
+              cut=score(rank[49]);above={i for i in pool if score(i)>cut}
+              tied={i for i in pool if score(i)==cut}
+              below={i for i in pool if score(i)<cut}
+              sel=selected[year]
+              return {"pool":pool,"cut":cut,"score":score,"above":above,"tied":tied,"below":below,
+                      "tied_selected":tied&sel,"tied_unselected":tied-sel}
+          ref={y:build(y,pools[y]["main"]) for y in (2024,2025)}
+          # Tie-break rate needs union of apartment IDs over the TWO seasons; exact labels
+          # are not always normalizable. Pull ONLY matched cutoff and near-cutoff subset,
+          # no published apartment identifiers.
+          tie_candidates=set()
+          for y,z in ref.items():
+              cut=z["cut"]
+              tie_candidates|={i for i in z["pool"] if abs(z["score"](i)-cut)<=1}
+          def norm_ap(s):
+              if s is None:return None
+              v=" ".join(str(s).strip().upper().replace("#","").replace("APARTMENT","").replace("APT","").split())
+              if v in {"","ALL","COMMON AREA","PUBLIC AREA","BLDG","BUILDING","LOBBY","UNKNOWN","N/A"}:return None
+              return v
+          counts=collections.defaultdict(lambda:collections.defaultdict(set))
+          bad=collections.Counter();raw=collections.Counter()
+          for y in (2024,2025):
+              candidates={i for i in ref[y]["pool"] if abs(ref[y]["score"](i)-ref[y]["cut"])<=1}
+              start=years[y-2][0];end=years[y-1][1]
+              for chunk in blocks(candidates,25):
+                  result=get("ygpa-z7cr",{"$select":"building_id,apartment","$where":"building_id in ("+",".join(chunk)+") AND received_date >= '"+start+"T00:00:00' AND received_date < '"+end+"T00:00:00' AND major_category='HEAT/HOT WATER'","$limit":45000})
+                  if len(result)>=45000:raise RuntimeError("Tie ratio apartment query truncated")
+                  for row in result:
+                      i=str(row["building_id"])
+                      raw[(y,i)]+=1
+                      x=norm_ap(row.get("apartment"))
+                      if x:counts[y][i].add(x)
+                      else:bad[(y,i)]+=1
+              print("TIE_COMPLAINT_ROWS_LOADED",y,len(candidates),flush=True)
+          out={"checked_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           "rule_reference":"28 RCNY 56-02(a)-(c) effective June 1 2024",
+           "rule_prepriority":"two seasons >=1 27-2029(a)/27-2028 violation each, heat complaint >=2 distinct units each; rank 50 by total violations >=4, tied by percentage of complaining units",
+           "decision_boundary":"50th highest observed heat-law text proxy score in reconstructed qualified pool, not official HPD scoring sheet",
+           "primary_eligibility":"AEP active as of July 1 proxy; current HPD legalclassa >=3; 2022-only previous HSP active proxy for 2024, 2022+2024 for 2025",
+           "sensitivity_eligibility":"also remove all earlier active HSP cohorts including 2020; 2024/25 exact score support assessed both ways",
+           "predeclared_tie_compatibility":{"borough_exact":True,"max_unit_count_factor":2.0,
+             "max_abs_two_season_complaint_unit_fraction_difference":0.10,
+             "same_split_counts_required_separately":True},
+           "years":{},"warnings":[
+           "Current HPD building class A counts and location are not historical decision-date records",
+           "AEP and prior HSP participation are incomplete eligibility screens; 7A and in-rem statuses are unverified",
+           "Description text substring is not a verified historical 27-2029(a) issuance code or contemporaneous violation snapshot",
+           "Apartment labels are raw public values; normalized distinct-unit count is a noisy proxy of percent of dwellings with heat-related complaints",
+           "No claim that selecting based on a rank alone identifies a regression discontinuity or randomized treatment",
+           "Counts of compatible pairs reflect administrative record support only, not valid causal exchangeability"]}
+          for y in (2024,2025):
+              z=ref[y];sc=z["score"];sel=selected[y]
+              assert len(z["above"]) + len(z["tied"]) + len(z["below"])==len(z["pool"])
+              ts=sorted(z["tied_selected"]);cs=sorted(z["tied_unselected"])
+              fraction=lambda i:len(counts[y][i])/units(i) if units(i)>0 else None
+              pairs={}
+              gates=collections.Counter()
+              for a in ts:
+                  for b in cs:
+                      gates["exact_risk_score"]+=1
+                      same_splits=(viol[y-2].get(a,0),viol[y-1].get(a,0))==(viol[y-2].get(b,0),viol[y-1].get(b,0))
+                      if same_splits:gates["also_same_season_split"]+=1
+                      if boro(a)!=boro(b) or boro(a) is None:continue
+                      gates["plus_same_borough"]+=1
+                      fr=units(a)/units(b) if units(b) else 1e9
+                      if not 0.5<=fr<=2.0:continue
+                      gates["plus_unit_factor_two"]+=1
+                      fd=abs(fraction(a)-fraction(b))
+                      if fd>0.10:continue
+                      gates["plus_complaint_fraction_10pp"]+=1
+                      if same_splits:gates["plus_all_and_same_split"]+=1
+                      pairs[(a,b)]={"same_season_counts":same_splits,"fraction_difference":round(fd,5),
+                           "size_ratio":round(fr,5),"same_borough":True}
+              margin={str(s):{"selected":sum(sc(i)==s for i in z["pool"]&sel),
+                                "not_selected":sum(sc(i)==s for i in z["pool"]-sel)}
+                    for s in [z["cut"]-2,z["cut"]-1,z["cut"],z["cut"]+1,z["cut"]+2]}
+              # Was the actual selected outcome deterministic around score threshold?
+              cut=z["cut"]
+              tie_evidence=sorted([{"case":alias(i),"selected":i in sel,
+                   "violation_total_proxy":sc(i),
+                   "season_1_violations":viol[y-2].get(i,0),"season_2_violations":viol[y-1].get(i,0),
+                   "current_legal_class_a":units(i),
+                   "two_season_distinct_unit_proxy":len(counts[y][i]),
+                   "noisy_apartment_fraction":round(fraction(i),5),
+                   "unknown_apartment_rows":bad[(y,i)]}
+                   for i in z["tied"]],key=lambda q:(-q["noisy_apartment_fraction"],q["case"]))
+              strict=build(y,pools[y]["strict"])
+              out["years"][str(y)]={
+                "source_eligible_primary":len(z["pool"]),"source_eligible_strict":len(strict["pool"]),
+                "selected_in_eligible_primary":len(z["pool"]&sel),
+                "selected_omitted_by_primary_proxy":len(sel-z["pool"]),
+                "rank50_score_primary":cut,
+                "rank50_score_strict":strict["cut"],
+                "above_cutoff":{"total":len(z["above"]),"selected":len(z["above"]&sel),"unselected":len(z["above"]-sel)},
+                "at_cutoff":{"total":len(z["tied"]),"selected":len(ts),"unselected":len(cs)},
+                "below_cutoff":{"total":len(z["below"]),"selected":len(z["below"]&sel),"unselected":len(z["below"]-sel)},
+                "exact_score_margin_distribution":margin,
+                "strict_sensitivity":{"at_cutoff_total":len(strict["tied"]),
+                    "at_cutoff_selected":len(strict["tied_selected"]),
+                    "at_cutoff_unselected":len(strict["tied_unselected"]),
+                    "above_cutoff_unselected":len(strict["above"]-sel)},
+                "matched_tie_support":{
+                    "selected_tied_buildings_with_any_exact_score_unselected":len(ts) if cs else 0,
+                    "unselected_tied_buildings":len(cs),
+                    "pair_gate_counts":dict(gates),
+                    "distinct_selected_after_all_gates":len({a for a,b in pairs}),
+                    "distinct_unselected_after_all_gates":len({b for a,b in pairs}),
+                    "all_gates_with_same_season_counts_selected":len({a for a,b in pairs if pairs[(a,b)]["same_season_counts"]}),
+                    "complete_pair_aliases":[{"selected":alias(a),"unselected":alias(b),**r} for (a,b),r in sorted(pairs.items())][:60]},
+                "tie_cases_pseudonymous":tie_evidence,
+                "any_official_selected_below_observed_cut":len(z["below"]&sel),
+                "risk_score_vector_not_yet_independently_historically_verified":True}
+              print("COHORT_RESULT",y,json.dumps({k:v for k,v in out["years"][str(y)].items() if k!="tie_cases_pseudonymous"},sort_keys=True),flush=True)
+          # Additional independent tests: borough-level selection opportunity under published
+          # conditions, and law-grounded 2025 exception-status forensic checks.
+          # 7A entries manually transcribed from official NYC Council FY2025 7A schedule.
+          # Report issued Feb 2026; dates recorded cover earlier appointments/discharges.
+          report_7a="""1|160|WEST 121 STREET|2017-02-23|
+          1|214|EAST 111 STREET|2019-04-18|2025-02-20
+          1|298|EAST 3 STREET|2019-10-10|
+          1|2081|5 AVENUE|2020-03-03|
+          1|2089|AMSTERDAM AVENUE|2016-01-19|
+          1|2091|AMSTERDAM AVENUE|2016-01-19|
+          1|410|WEST 46 STREET|2023-11-21|
+          2|645|EAST 228 STREET|2017-06-01|
+          2|2328|UNIVERSITY AVENUE|2021-06-10|
+          3|138|WYCKOFF AVENUE|2022-06-17|
+          3|333|MENAHAN STREET|2019-04-29|
+          3|395|LINDEN STREET|2020-03-02|
+          3|284|COOPER STREET|2011-09-01|
+          3|454|BRADFORD STREET|2017-09-30|
+          3|455|TOMPKINS AVENUE|2017-10-10|
+          3|308|HARMAN STREET|2016-07-18|
+          3|438|60 STREET|2022-09-28|
+          3|311|MONTAUK AVENUE|2022-04-15|
+          3|567|ST JOHNS PLACE|2022-07-01|
+          3|992|JEFFERSON AVENUE|2022-08-08|
+          3|306|HARMAN STREET|2022-04-08|
+          3|299|TROUTMAN STREET|2022-04-04|
+          3|225|LYNCH STREET|2023-12-18|
+          3|404|BRIGHTON BEACH AVENUE|2024-03-01|
+          3|205|SUMPTER STREET|2024-08-13|
+          3|463|52 STREET|2025-02-13|
+          3|327|VERNON AVENUE|2017-08-22|2025-01-23"""
+          def addr_norm(x):
+              x=str(x or "").upper().replace("’","").replace("'","").strip()
+              x=" ".join(x.split())
+              for a,b in [("STREET","ST"),("AVENUE","AVE"),("PLACE","PL"),("WEST","W"),("EAST","E")]:
+                  x=re.sub(r"\b"+a+r"\b",b,x)
+              return " ".join(x.split())
+          def bcode(b):return {"MN":"1","BX":"2","BK":"3","QN":"4","SI":"5"}.get(b,"?")
+          fy25_7a=[]
+          for line in report_7a.strip().splitlines():
+              z=line.split("|")
+              assert len(z)==5
+              fy25_7a.append({"boro":z[0],"housenumber":addr_norm(z[1]),
+                "streetname":addr_norm(z[2]),"appointment":z[3],"discharge":z[4]})
+          def doc7a(i,at="2025-07-01"):
+              q=reg.get(i,{})
+              addresskey=(bcode(boro(i)),addr_norm(q.get("housenumber")),
+                  addr_norm(q.get("streetname")))
+              hits=[r for r in fy25_7a if (r["boro"],r["housenumber"],r["streetname"])==addresskey]
+              active=[r for r in hits if r["appointment"]<=at and
+                      (not r["discharge"] or r["discharge"]>at)]
+              return {"schedule_address_match_count":len(hits),
+                "appointment_active_at_selection_documented":bool(active),
+                "appointment_date_if_matched":[r["appointment"] for r in active],
+                "schedule_absence_is_no_proof_of_no_appointment":True}
+          out["audit_extension_version"]="geographic-distribution-and-2025-legal-exclusions-v1"
+          out["additional_sources"]={
+           "7A_FY2025_schedule":"https://council.nyc.gov/budget/wp-content/uploads/sites/54/2026/02/HPD-Article-7A-Program-Report.pdf",
+           "Housing_Litigation":"https://data.cityofnewyork.us/d/59kj-x8nc",
+           "AEP":"https://data.cityofnewyork.us/d/hcir-3275",
+           "HPD_registered_buildings":"https://data.cityofnewyork.us/d/kj4p-ruqc",
+           "HSP":"https://data.cityofnewyork.us/d/h4mf-f24e",
+           "legal_rule":"https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCrules/0-0-0-127069",
+           "third_party_transfer_process":"https://www.nyc.gov/site/finance/property/property-in-rem-forclosure.page"}
+          out["geographic_allocation"]={}
+          for yr in (2024,2025):
+              pool=ref[yr]["pool"]
+              score=ref[yr]["score"]
+              treatment=selected[yr]
+              scores=collections.Counter(score(i) for i in pool)
+              selected_scores=collections.Counter(score(i) for i in pool&treatment)
+              exact_score_share={k:selected_scores[k]/n for k,n in scores.items()}
+              city_units=sum(units(i) for i in pool)
+              selected_units=sum(units(i) for i in pool&treatment)
+              borough_summary=[]
+              for borough in ("MN","BX","BK","QN","SI"):
+                  members={i for i in pool if boro(i)==borough}
+                  s=members & treatment
+                  candidates=len(members)
+                  expected=sum(exact_score_share[score(i)] for i in members)
+                  borough_summary.append({
+                    "borough":borough,"eligible_proxy":candidates,
+                    "selected":len(s),"not_selected":candidates-len(s),
+                    "eligible_current_class_a_units":sum(units(i) for i in members),
+                    "selected_current_class_a_units":sum(units(i) for i in s),
+                    "building_coverage_rate":round(len(s)/candidates,6) if candidates else None,
+                    "current_unit_coverage_rate":round(sum(units(i) for i in s)/sum(units(i) for i in members),6) if members else None,
+                    "candidate_share_of_city":round(candidates/len(pool),6),
+                    "selection_share_of_city":round(len(s)/len(pool&treatment),6),
+                    "risk_conditional_expected_selected":round(expected,5),
+                    "observed_minus_expected_risk_conditional":round(len(s)-expected,5),
+                    "mean_prior_two_season_heat_law_violations":round(sum(score(i) for i in members)/candidates,4) if candidates else None,
+                    "at_boundary_9_count":sum(score(i)==9 for i in members),
+                    "at_boundary_9_selected":sum(score(i)==9 for i in s),
+                    "high_risk_score_10plus_count":sum(score(i)>=10 for i in members),
+                    "score_4_to_8_candidate_count":sum(4<=score(i)<=8 for i in members)})
+              assert sum(r["eligible_proxy"] for r in borough_summary)==len(pool), "Unknown borough candidates require explicit coverage warning"
+              assert sum(r["selected"] for r in borough_summary)==len(pool&treatment)
+              assert abs(sum(r["observed_minus_expected_risk_conditional"] for r in borough_summary))<0.0002
+              high=[i for i in pool if score(i)>=10]
+              boundary=[i for i in pool if score(i)==9]
+              out["geographic_allocation"][str(yr)]={
+                "definition":"Currently observable statutory eligibility proxy; excludes active AEP and previous HSP active proxy, current >=3 Class A. 7A and TPT historical exclusions unresolved.",
+                "selected_over_proxy_eligible":len(pool&treatment),
+                "proxy_eligible":len(pool),"citywide_current_units":city_units,
+                "citywide_selected_current_units":selected_units,
+                "borough_rows":borough_summary,
+                "risk_strata":{
+                  "score_4_8":{"eligible":sum(4<=score(i)<=8 for i in pool),
+                     "selected":sum(4<=score(i)<=8 for i in pool&treatment)},
+                  "score_9":{"eligible":len(boundary),"selected":len(set(boundary)&treatment)},
+                  "score_10plus":{"eligible":len(high),"selected":len(set(high)&treatment)}},
+                "identified_mechanism":"Borough risk-standardized expected count is a score-conditional descriptive reference, not an equity or causal estimator."}
+              print("BOROUGH_OPPORTUNITY",yr,json.dumps(borough_summary,sort_keys=True),flush=True)
+          # Target both sides of the 2025 observed score anomaly.
+          y=2025
+          z=ref[y]
+          below_selected=sorted(z["below"]&selected[y])
+          tied_unselected=sorted(z["tied"]-selected[y])
+          assert len(below_selected)==1 and len(tied_unselected)==1, "Preserve frozen external holdout; no rule revision"
+          s8,t9=below_selected[0],tied_unselected[0]
+          assert alias(s8)=="4928681573" and alias(t9)=="fdef087e96","Alias drift relative to frozen benchmark"
+          case_set=[s8,t9]
+          cases=[]
+          aep_byid=collections.defaultdict(list)
+          for r in aep:aep_byid[str(r.get("building_id"))].append(r)
+          def legal_for(i):
+              event="2025-07-01"
+              aep_hist=[{"start":str(r.get("aep_start_date",""))[:10],
+                "discharged":str(r.get("discharge_date",""))[:10]}
+                for r in aep_byid[i]]
+              active_any=any(r["start"] and r["start"]<=event and
+                     (not r["discharged"] or r["discharged"]>event) for r in aep_hist)
+              q=reg.get(i,{})
+              return {"case_alias":alias(i),"officially_selected":i in selected[y],
+                "two_season_score":z["score"](i),
+                "two_season_score_components":[viol[2023].get(i,0),viol[2024].get(i,0)],
+                "current_class_A_units":units(i),"borough":boro(i),
+                "aep_selected_active_at_cutoff":active_any,
+                "aep_interval_history":aep_hist,
+                "FY25_7A_official_schedule":doc7a(i),
+                "current_management_program_signal":str(q.get("managementprogram","")),
+                "in_rem_city_judgment_and_transfer_last_5_years":"unverified_without_qualified_record",
+                "extra_discretionary_criterion_as_of_2025":"not_documented_in_published_selection_list",
+                "historical_scoring_record_as_of_2025":"not_publicly_obtained"}
+          for i in case_set:cases.append(legal_for(i))
+          # Litigation CASES are not judicial 7A APPOINTMENT orders. Query and label accordingly.
+          try:
+              lit=get("59kj-x8nc",{"$select":"buildingid,casetype,caseopendate,casestatus,litigationid",
+                "$where":"buildingid in ("+",".join(case_set)+") AND caseopendate < '2025-07-01T00:00:00'",
+                "$limit":1000})
+              assert len(lit)<1000
+              for rec in cases:
+                  i=next(x for x in case_set if alias(x)==rec["case_alias"])
+                  matching=[r for r in lit if str(r.get("buildingid"))==i]
+                  proceeding=[r for r in matching if "7A" in str(r.get("casetype","")).upper().replace(" ","")]
+                  rec["hpd_housing_litigation"]={
+                    "any_hpd_case_opened_by_cutoff":len(matching),
+                    "cases_coded_7A_by_cutoff":len(proceeding),
+                    "7A_proceeding_open_dates":[str(r.get("caseopendate",""))[:10] for r in proceeding],
+                    "7A_case_status_latest_display":[str(r.get("casestatus","")) for r in proceeding],
+                    "7A_proceeding_is_not_proof_of_appointment":True}
+              print("HOUSING_LITIGATION_LOADED",len(lit),flush=True)
+          except Exception as e:
+              # Missing record is represented as data-unavailable rather than an exoneration.
+              for rec in cases:rec["hpd_housing_litigation"]={
+                "retrieval_status":"failed","error":str(type(e).__name__)+":"+str(e)[:120]}
+              print("HOUSING_LITIGATION_UNAVAILABLE",str(e)[:200],flush=True)
+          out["case_2025_legal_reconstruction"]={
+           "law_state_asof":"2025-07-01",
+           "regulation_exclusions":["active_AEP","court_appointed_7A_administrator",
+                 "city_in_rem_foreclosure_judgment_and_qualifying_transfer_past_five_years"],
+           "regulation_discretion":"including but not limited to legal specified inputs",
+           "screened_cases":cases,
+           "sensitivity_if_9_score_unselected_legally_disqualified":{
+             "new_eligible_count":len(z["pool"])-1,
+             "new_rank50_violation_score":sorted([z["score"](i) for i in z["pool"] if i!=t9],reverse=True)[49],
+             "remaining_selected":len((z["pool"]-{t9})&selected[y]),
+             "consequence":"One documented valid exclusion of the 9-score unselected candidate could remove the 8-versus-9 ordering paradox; this is logical sensitivity, not proof that such exclusion existed."},
+           "other_explanation_paths":{
+             "violation_coding_and_scoring_history":"current text proxy vs contemporaneous scored violations, 27-2029(a) subtype",
+             "additional_nonenumerated_selection_criteria":"rule section 56-02(a), requires decision-specific record",
+             "7A_appointment":"court order or audited official appointment schedule",
+             "in_rem_transfer":"judgment + deed + statutory interval, property matched by BBL"},
+           "not_proven":"Specific legal reason for the 2025 selection pair cannot be asserted from non-matching or missing public sources."}
+          print("CASE_LEGAL_RESULT",json.dumps(out["case_2025_legal_reconstruction"],sort_keys=True),flush=True)
+          (OUT/"boundary_support.json").write_text(json.dumps(out,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+          print("RESULT_BEGIN")
+          print(json.dumps(out,indent=2,sort_keys=True))
+          print("RESULT_END")
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hsp-geographic-legal-evidence
+          path: out/hsp_geo_legal/
+          if-no-files-found: warn
+          retention-days: 45
