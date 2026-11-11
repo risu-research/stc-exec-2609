@@ -1,0 +1,121 @@
+name: HSP 2025 7A legal exception evidence certificate
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hsp-2025-7a-exception.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-legal-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify cross-source legal exclusion and selected score-order counterfactual
+        shell: bash
+        run: |
+          python - <<'PY'
+          """Independent evidence-chain test for the 2025 HSP score-order case.
+          Read-only public NYC APIs plus official FY2025 7A schedule (dated 2026-02).
+          Produces case-level provenance and a counterfactual legal-screening certificate.
+          """
+          import datetime, hashlib, json, pathlib, urllib.parse, urllib.request
+          OUT=pathlib.Path("out/hsp_2025_exception");OUT.mkdir(parents=True,exist_ok=True)
+          BASE="https://data.cityofnewyork.us/resource/"
+          def get(ds,where,fields=None):
+              p={"$where":where,"$limit":100}
+              if fields:p["$select"]=fields
+              u=BASE+ds+".json?"+urllib.parse.urlencode(p)
+              with urllib.request.urlopen(urllib.request.Request(u,headers={"User-Agent":"PublicHSP2025ExceptionEvidence/1.0"}),timeout=90) as r:return json.load(r)
+          def alias(b):return hashlib.sha256(("rank-2024:"+str(b)).encode()).hexdigest()[:10]
+          target={"selected_8":"809032","unselected_9":"381702"}
+          assert alias(target["selected_8"])=="4928681573"
+          assert alias(target["unselected_9"])=="fdef087e96"
+          ids=",".join(target.values())
+          reg=get("kj4p-ruqc","buildingid in ("+ids+")","buildingid,boro,legalclassa,managementprogram,housenumber,lowhousenumber,highhousenumber,streetname,block,lot,bin")
+          assert len(reg)==2
+          byid={str(r["buildingid"]):r for r in reg}
+          nine=byid[target["unselected_9"]]
+          eight=byid[target["selected_8"]]
+          assert nine["boro"].upper()=="BROOKLYN"
+          assert nine["streetname"].upper()=="TOMPKINS AVENUE"
+          assert int(nine["lowhousenumber"])<=455<=int(nine["highhousenumber"])
+          assert nine["managementprogram"].upper()=="7A"
+          cases=get("59kj-x8nc","buildingid=381702 AND caseopendate < '2025-07-01T00:00:00'","buildingid,casetype,caseopendate,casestatus,litigationid")
+          l7a=[r for r in cases if str(r.get("casetype","")).strip().upper()=="7A"]
+          assert any(str(r["caseopendate"])[:10]=="2016-04-11" for r in l7a)
+          aep=get("hcir-3275","building_id in ("+ids+")","building_id,aep_start_date,discharge_date,current_status")
+          aep_byid={str(r["building_id"]):r for r in aep}
+          old=aep_byid.get(target["unselected_9"])
+          assert old and str(old["discharge_date"])[:10]=="2017-11-15"
+          aep_eight=aep_byid.get(target["selected_8"])
+          assert aep_eight and str(aep_eight["aep_start_date"])[:10]=="2026-02-02"
+          hsp=get("h4mf-f24e","program_start_date >= '2025-01-01T00:00:00' AND program_start_date < '2026-01-01T00:00:00'","building_id,borough,number,street,total_units,program_start_date")
+          selected={str(r["building_id"]) for r in hsp}
+          assert len(selected)==50 and target["selected_8"] in selected and target["unselected_9"] not in selected
+          # FY25 7A program list: court appointment dated 2017-10-10 at 455 Tompkins Ave,
+          # listed with blank discharge date for the fiscal year ending 2025-06-30.
+          official_7a={"address":"455 Tompkins Avenue","borough":"Brooklyn",
+           "appointment_date":"2017-10-10","FY25_reported_discharge_date":None,
+           "source":"https://council.nyc.gov/budget/wp-content/uploads/sites/54/2026/02/HPD-Article-7A-Program-Report.pdf",
+           "source_page":1,"report_date":"2026-02",
+           "source_scope":"FY2025 7A Administrator Program"}
+          crosswalk={
+            "FY25_schedule_house_number":455,"HPD_primary_number":str(nine["housenumber"]),
+            "HPD_range_low":str(nine["lowhousenumber"]),"HPD_range_high":str(nine["highhousenumber"]),
+            "street":"TOMPKINS AVENUE","same_range":int(nine["lowhousenumber"])<=455<=int(nine["highhousenumber"]),
+            "HPD_building_id_hash":alias(target["unselected_9"]),
+            "HPD_BIN":str(nine["bin"]),"HPD_BBL":str("3"+str(nine["block"]).zfill(5)+str(nine["lot"]).zfill(4))}
+          assert crosswalk["same_range"]
+          certificate={
+           "created_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           "official_7A_report":official_7a,
+           "address_range_identity_crosswalk":crosswalk,
+           "case_9":{"case_alias":alias(target["unselected_9"]),"score_proxy":9,
+              "selected_2025":False,"HPD_current_managementprogram":nine["managementprogram"],
+              "HPD_7A_litigation_opened_by_2025":[{"opened":str(z["caseopendate"])[:10],
+                  "current_case_status":z.get("casestatus")} for z in l7a],
+              "AEP_discharge_date":str(old["discharge_date"])[:10],
+              "7A_asof_2025":"documented_FY25_7A_schedule_appointment_2017_no_discharge_reported"},
+           "case_8":{"case_alias":alias(target["selected_8"]),"score_proxy":8,
+              "selected_2025":True,"official_number":next(z.get("number") for z in hsp if str(z["building_id"])==target["selected_8"]),
+              "official_street":next(z.get("street") for z in hsp if str(z["building_id"])==target["selected_8"]),
+              "AEP_start_date":str(aep_eight["aep_start_date"])[:10],
+              "AEP_postdates_2025_selection":str(aep_eight["aep_start_date"])[:10]>"2025-07-01"},
+           "regulation":"28 RCNY 56-02(b), court-appointed 7A administrator is mandatory exclusion",
+           "2025_frozen_previous_rank_distribution":{"strictly_above_score_9":36,
+              "score_9_selected":13,"score_9_unselected":1,"selected_score_8":1},
+           "conditional_legal_screening":{"exclude_unselected_score_9_if_7A_effective_asof_2025":True,
+              "remaining_2025_selected_high_score":36+13+1,
+              "effective_50th_score":8,
+              "observed_order_reversal_explained":"yes, conditional on verified 7A coverage at cutoff"},
+           "evidence_status":{"7A_appointment":"official_FY25_retrospective_schedule",
+             "7A_proceeding":"official_HPD_public_case_2016",
+             "current_management":"official_HPD_register_7A",
+             "building_identifier_link":"HPD_low_to_high_house_number_range_same_BuildingID",
+             "TPT_in_rem_transfer":"not_recovered",
+             "historical_internal_scoring_sheet":"not_recovered"},
+           "limitations":["The 2026-published FY25 list is retrospective and not a July 1 2025 court order.",
+              "Open litigation alone is not appointment; independent FY25 schedule supplies appointment date.",
+              "Raw 8 and 9 violation scores come from frozen current-data proxy, not historic HPD score certification.",
+              "Current HPD manager status alone is not a historical determination."],
+           "datasets":{"HPD_Buildings":"kj4p-ruqc","Litigation":"59kj-x8nc",
+             "AEP":"hcir-3275","HSP":"h4mf-f24e"}}
+          (OUT/"legal_exception_evidence.json").write_text(json.dumps(certificate,indent=2,ensure_ascii=False)+"\n")
+          print("LEGAL_EXCEPTION_PROOF_BEGIN")
+          print(json.dumps(certificate,indent=2,ensure_ascii=False))
+          print("LEGAL_EXCEPTION_PROOF_END")
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hsp-2025-7a-evidence-certificate
+          path: out/hsp_2025_exception/
+          if-no-files-found: warn
+          retention-days: 90
