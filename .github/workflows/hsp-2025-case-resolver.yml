@@ -1,0 +1,28 @@
+name: HSP 2025 public case resolver
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hsp-2025-case-resolver.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve previously frozen selected-case pseudonym in official public HSP list
+        run: |
+          python - <<'PY'
+          import hashlib, json, urllib.request, urllib.parse
+          params={"$where":"program_start_date >= '2025-01-01T00:00:00' AND program_start_date < '2026-01-01T00:00:00'","$limit":"100"}
+          u="https://data.cityofnewyork.us/resource/h4mf-f24e.json?"+urllib.parse.urlencode(params)
+          with urllib.request.urlopen(urllib.request.Request(u,headers={"User-Agent":"PublicRecordCaseResolver/1.0"}),timeout=45) as r:rows=json.load(r)
+          assert len(rows)==50
+          a=lambda x:hashlib.sha256(("rank-2024:"+str(x)).encode()).hexdigest()[:10]
+          found=[r for r in rows if a(r["building_id"])=="4928681573"]
+          assert len(found)==1
+          z=found[0]
+          print("RESOLVED_SELECTED_CASE",json.dumps({"case_alias":a(z["building_id"]),"borough":z.get("borough"),"number":z.get("number"),"street":z.get("street"),"bbl":z.get("bbl"),"bin":z.get("bin"),"current_units":z.get("total_units"),"hsp_start_date":z.get("program_start_date")},sort_keys=True))
+          PY
