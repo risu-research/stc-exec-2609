@@ -46,13 +46,13 @@ jobs:
           for line in official_list.strip().splitlines():
               borough,number,street,appointed,discharged=line.split("|")
               if appointed<="2025-07-01" and (not discharged or discharged>"2025-07-01"):
-                  fy25.append({"boro":borough,"num":int(number),"street":anorm(street),
+                  fy25.append({"boro":borough,"num":int(number),"street":anorm(street),"raw_street":street,
                     "appointed":appointed})
-          roads=sorted({(r["boro"],r["street"]) for r in fy25})
+          roads=sorted({(r["boro"],r["raw_street"]) for r in fy25})
           def address_search(key):
               b,s=key
               q={"$select":"buildingid,boroid,boro,housenumber,lowhousenumber,highhousenumber,streetname,legalclassa,managementprogram",
-                 "$where":"boroid="+b+" AND streetname like '%"+(" ".join(s.split()[:-1]) if s.endswith((" ST"," AVE"," PL")) else s).replace("'","")+"%'",
+                 "$where":"boroid="+b+" AND streetname = '"+s+"'",
                  "$limit":1000}
               arr=get("kj4p-ruqc",q)
               if len(arr)>=1000:raise RuntimeError("road query capped")
@@ -61,7 +61,7 @@ jobs:
               route=dict(ex.map(address_search,roads))
           matched={}; unmatched=[]
           for p in fy25:
-              arr=route.get((p["boro"],p["street"]),[])
+              arr=route.get((p["boro"],p["raw_street"]),[])
               found=[]
               for r in arr:
                   if anorm(r.get("streetname"))!=p["street"]:continue
