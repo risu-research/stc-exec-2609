@@ -1,0 +1,264 @@
+name: Municipal eligibility matched-control pretrends
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/municipal-eligibility-pretrends.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pretrend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Independent public controls and frozen early season pretrend audit
+        shell: bash
+        run: |
+          python - <<'PY'
+          """Pre-registered observational control/pretreatment trend feasibility audit.
+          Public NYC administrative APIs only; read-only; no person or apartment output.
+          Not a causal estimate. Dates, screens, matching calipers and equivalence bands
+          are fixed before access to pretrend outcomes in this script.
+          """
+          import collections, concurrent.futures, datetime, json, math, pathlib, random, statistics, time, urllib.parse, urllib.request, urllib.error
+          ROOT="https://data.cityofnewyork.us/resource/"
+          HEAD={"User-Agent":"PublicHousingAdministrativeControlAudit/1.0"}
+          OUT=pathlib.Path("out/public_control_pretrends")
+          OUT.mkdir(parents=True,exist_ok=True)
+          def fetch(ds,query):
+              u=ROOT+ds+".json?"+urllib.parse.urlencode(query)
+              for attempt in range(4):
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(u,headers=HEAD),timeout=140) as r:
+                          z=json.load(r)
+                      if not isinstance(z,list): raise ValueError("API response not a list")
+                      return z
+                  except urllib.error.HTTPError as e:
+                      if e.code not in (429,500,502,503,504) or attempt==3:raise
+                  except (urllib.error.URLError,TimeoutError):
+                      if attempt==3:raise
+                  time.sleep(3*(attempt+1))
+          def batches(seq,n):
+              a=sorted(seq)
+              for i in range(0,len(a),n):yield a[i:i+n]
+          def count(ds,key,date,start,stop,extra,expression):
+              where=date+" >= '"+start+"T00:00:00' AND "+date+" < '"+stop+"T00:00:00'"+extra
+              a=fetch(ds,{"$select":key+","+expression+" as n","$where":where,"$group":key,"$limit":50000})
+              if len(a)>=50000:raise RuntimeError("Citywide aggregate truncated")
+              return {str(z[key]):int(z["n"]) for z in a}
+          seasons={
+          2022:("2022-10-01","2023-06-01"),
+          2023:("2023-10-01","2024-06-01"),
+          2024:("2024-10-01","2025-06-01")}
+          V={};C={}
+          for year,(lo,hi) in seasons.items():
+              V[year]=count("wvxf-dwi5","buildingid","novissueddate",lo,hi,
+                  " AND (novdescription like '%27-2029%' OR novdescription like '%27-2028%')","count(*)")
+              C[year]=count("ygpa-z7cr","building_id","received_date",lo,hi,
+                  " AND major_category='HEAT/HOT WATER' AND apartment is not null","count(distinct apartment)")
+              print("ELIGIBILITY_SOURCES",year,"violation_buildings",len(V[year]),"apartment_buildings",len(C[year]),flush=True)
+          hsp=fetch("h4mf-f24e",{"$limit":500})
+          selected={y:{str(z["building_id"]) for z in hsp if str(z.get("program_start_date","")).startswith(str(y))} for y in (2024,2025)}
+          assert all(len(v)==50 for v in selected.values())
+          aep=fetch("hcir-3275",{"$limit":6000,"$select":"building_id,aep_start_date,discharge_date"})
+          if len(aep)>=6000:raise RuntimeError("AEP listing cap reached")
+          S={}
+          for year in (2024,2025):
+              a,b=year-2,year-1
+              common=set(V[a])&set(V[b])&set(C[a])&set(C[b])
+              qualified={i for i in common if V[a][i]>=1 and V[b][i]>=1 and
+                V[a][i]+V[b][i]>=4 and C[a][i]>=2 and C[b][i]>=2}
+              when=f"{year}-07-01"
+              active_aep={str(z["building_id"]) for z in aep if z.get("aep_start_date")
+                and str(z["aep_start_date"])[:10]<=when
+                and (not z.get("discharge_date") or str(z["discharge_date"])[:10]>when)}
+              prior={str(z["building_id"]) for z in hsp if str(z.get("program_start_date",""))[:4]<str(year)
+                and str(z.get("current_status","")).upper()=="ACTIVE"}
+              after_aep=qualified-active_aep
+              S[year]={"eligible_raw":qualified,"after_aep":after_aep,"prior":prior,"active_aep":active_aep}
+          all_candidates=set.union(*(s["after_aep"] for s in S.values()))
+          registry={}
+          for chunk in batches(all_candidates,70):
+              rows=fetch("kj4p-ruqc",{"$select":"buildingid,legalclassa,boro",
+                "$where":"buildingid in ("+",".join(chunk)+")","$limit":1000})
+              if len(rows)>=1000:raise RuntimeError("Building register truncated")
+              registry.update({str(z["buildingid"]):z for z in rows})
+          def units(i):
+              try:return int(registry.get(i,{}).get("legalclassa","0"))
+              except (ValueError,TypeError):return 0
+          bmap={"1":"MN","2":"BX","3":"BK","4":"QN","5":"SI",
+            "MANHATTAN":"MN","BRONX":"BX","BROOKLYN":"BK","QUEENS":"QN","STATEN ISLAND":"SI"}
+          def boro(i):
+              v=str(registry.get(i,{}).get("boro","")).upper().strip()
+              return bmap.get(v,v if v in ("MN","BX","BK","QN","SI") else None)
+          pop={}
+          flow={}
+          for year,s in S.items():
+              qualified=s["eligible_raw"]; after=s["after_aep"]
+              after_class={i for i in after if units(i)>=3}
+              eligible=after_class-s["prior"]
+              # All true selected buildings are included for tracking regardless of proxy eligibility,
+              # but only newly selected, demonstrably eligible records are in matching pool.
+              tr=eligible & selected[year]
+              controls=eligible-selected[year]
+              pop[year]={"treated":tr,"controls":controls,"eligible":eligible}
+              flow[str(year)]={"official_selected":len(selected[year]),
+                "candidate_eligibility_proxy":len(qualified),"after_AEP":len(after),
+                "after_observable_class_A":len(after_class),"after_prior_HSP_proxy":len(eligible),
+                "selected_in_proxy_eligible":len(tr),"not_selected_proxy_eligible":len(controls),
+                "official_selected_outside_proxy":len(selected[year]-eligible),
+                "unknown_borough_eligible":sum(boro(i) is None for i in eligible),
+                "current_registry_missing":len(after-set(registry))}
+          print("CANDIDATE_FLOW",json.dumps(flow,sort_keys=True),flush=True)
+          allids=set.union(*(v["treated"]|v["controls"] for v in pop.values()))
+          # Historical series, monthly aggregates. Grouped counts are distinct within building-month,
+          # never a guaranteed globally distinct building-season complaint ID.
+          def one(spec):
+              label,idx,chunk=spec
+              if label=="complaints":
+                  ds,key,dt,add,agg="ygpa-z7cr","building_id","received_date",
+                    " AND major_category in ('HEAT/HOT WATER','HEATING')","count(distinct complaint_id)"
+              else:
+                  ds,key,dt,add,agg="wvxf-dwi5","buildingid","novissueddate",
+                    " AND (novdescription like '%27-2029%' OR novdescription like '%27-2028%')","count(distinct violationid)"
+              ye="date_extract_y("+dt+")";mo="date_extract_m("+dt+")"
+              where=key+" in ("+",".join(chunk)+") AND "+dt+" >= '2018-10-01T00:00:00' AND "+dt+" < '2025-06-01T00:00:00'"+add
+              q={"$select":key+","+ye+" as yr,"+mo+" as mo,"+agg+" as n",
+                 "$where":where,"$group":key+","+ye+","+mo,"$limit":12000}
+              rows=fetch(ds,q)
+              if len(rows)>=12000:raise RuntimeError(label+": truncated grouped month rows")
+              return label,idx,rows
+          tasks=[]
+          for k,ch in enumerate(batches(allids,30),1):
+              tasks.extend([("complaints",k,ch),("violations",k,ch)])
+          print("START_PRETREND_QUERY",len(allids),"building_ids",len(tasks),"API_jobs",flush=True)
+          series=collections.Counter()
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+              futs=[pool.submit(one,x) for x in tasks]
+              for fut in concurrent.futures.as_completed(futs):
+                  label,idx,rows=fut.result()
+                  for rec in rows:
+                      y=int(rec["yr"]);m=int(rec["mo"])
+                      season=y if m>=10 else (y-1 if m<=5 else None)
+                      if season is None:continue
+                      series[(label,str(rec["building_id"] if label=="complaints" else rec["buildingid"]),season)]+=int(rec["n"])
+                  print("QUERY_OK",label,idx,"groups",len(rows),flush=True)
+          def level(i,y,label):
+              return math.log1p(100*series[(label,i,y)]/max(units(i),1))
+          def avg(xs):return statistics.mean(xs) if xs else None
+          def stdev(xs):return statistics.stdev(xs) if len(xs)>1 else 0
+          # Frozen pre-specified calipers and equivalence thresholds, not tuned to outcomes:
+          # exact borough; log risk-score <=log(1.5), log unit-count <=log(2.5),
+          # log most-recent baseline complaints <=log(3), and combined distance <= 1.3.
+          CAL={"max_log_legal_violation_score_delta":math.log(1.5),
+           "max_log_units_delta":math.log(2.5),"max_log_lastseason_complaints_delta":math.log(3),
+           "max_combined_distance":1.3,"max_controls_per_treated":2,
+           "heldout_slope_equivalence_tolerance_log_rate_per_season":0.15,
+           "max_baseline_absolute_standardized_mean_difference":0.2}
+          def diff(i,j,year):
+              a,b=year-2,year-1
+              scorei=V[a].get(i,0)+V[b].get(i,0)
+              scorej=V[a].get(j,0)+V[b].get(j,0)
+              sx=abs(math.log1p(scorei)-math.log1p(scorej))
+              ux=abs(math.log(units(i))-math.log(units(j)))
+              ex=abs(math.log1p(series[("complaints",i,b)])-math.log1p(series[("complaints",j,b)]))
+              dist=math.sqrt((1.2*sx)**2+(0.65*ux)**2+(0.4*ex)**2)
+              return sx,ux,ex,dist
+          def effect_ci(d):
+              if len(d)<2:return {"mean":None,"ci95":None,"n":len(d)}
+              mu=avg(d);se=stdev(d)/math.sqrt(len(d))
+              return {"mean":round(mu,5),"ci95":[round(mu-1.96*se,5),round(mu+1.96*se,5)],"n":len(d)}
+          def smd(t,c):
+              if len(t)<2 or len(c)<2:return None
+              pooled=math.sqrt((statistics.variance(t)+statistics.variance(c))/2)
+              if pooled==0:return 0 if avg(t)==avg(c) else None
+              return round((avg(t)-avg(c))/pooled,4)
+          result={"utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           "source":"NYC official public Socrata API, program and housing records",
+           "method":"Legal eligibility proxy -> selected/nonselected -> predeclared exact-borough risk calipers -> out-of-matching-window early-season slope checks",
+           "prespecified_matching_calipers":CAL,"population_flow":flow,"years":{},
+           "warnings":["Current HPD Class A unit and borough registration snapshot is not an as-of-selection archive.",
+           "AEP and prior-HSP exclusion proxies omit 7A and in-rem historical legal exclusions.",
+           "Eligibility uses free-text legal-citation search and unique raw apartment labels, which may differ from HPD classification.",
+           "Socrata monthly unique complaint IDs summed across months are building-month events and can double-count cross-month reopens.",
+           "Matching only pre-selection features cannot establish causal exchangeability.",
+           "Potential regression to the mean around risk-based selection; this is pre-trend feasibility, not causal estimation."]}
+          for year,data in pop.items():
+              treated=sorted(i for i in data["treated"] if boro(i))
+              untreated=sorted(i for i in data["controls"] if boro(i))
+              pairs={}
+              for i in treated:
+                  c=[]
+                  for j in untreated:
+                      if boro(i)!=boro(j):continue
+                      sx,ux,ex,d=diff(i,j,year)
+                      if sx<=CAL["max_log_legal_violation_score_delta"] and ux<=CAL["max_log_units_delta"] and ex<=CAL["max_log_lastseason_complaints_delta"] and d<=CAL["max_combined_distance"]:
+                          c.append((d,j))
+                  c.sort()
+                  if c:pairs[i]=[j for _,j in c[:2]]
+              t=list(pairs)
+              used={j for a in pairs.values() for j in a}
+              # With replacement means reusable controls; unique effective control n is reported.
+              b=year-1
+              a=year-2
+              heldout=[year-5,year-4,year-3]
+              selected_for_levels=sorted(pairs)
+              features={
+                "log_legal_violation_score":lambda i:math.log1p(V[a].get(i,0)+V[b].get(i,0)),
+                "log_unit_count":lambda i:math.log(units(i)),
+                "log_prior_season_complaints":lambda i:math.log1p(series[("complaints",i,b)]),
+                "log_prior_season_heat_violations":lambda i:math.log1p(series[("violations",i,b)])}
+              balance={}
+              for label,fn in features.items():
+                  tv=[fn(i) for i in selected_for_levels]
+                  cv=[avg([fn(j) for j in pairs[i]]) for i in selected_for_levels]
+                  balance[label]={"treated_mean":round(avg(tv),4) if tv else None,
+                   "matched_control_mean":round(avg(cv),4) if cv else None,
+                   "standardized_difference":smd(tv,cv)}
+              trends={}
+              for label in ("complaints","violations"):
+                  slopes=lambda i:(level(i,heldout[2],label)-level(i,heldout[0],label))/2
+                  d=[slopes(i)-avg([slopes(j) for j in pairs[i]]) for i in t]
+                  ci=effect_ci(d)
+                  eq=CAL["heldout_slope_equivalence_tolerance_log_rate_per_season"]
+                  if ci["ci95"] is None:status="insufficient_matched_pairs"
+                  elif ci["ci95"][0]>-eq and ci["ci95"][1]<eq:status="equivalence_supported_at_declared_margin"
+                  elif ci["ci95"][0]>0 or ci["ci95"][1]<0:status="slope_difference_detected"
+                  else:status="inconclusive_about_equivalence"
+                  trajectories=[]
+                  for yr in range(year-5,year):
+                      if not t:continue
+                      tv=[level(i,yr,label) for i in t]
+                      cv=[avg([level(j,yr,label) for j in pairs[i]]) for i in t]
+                      trajectories.append({"season_start":yr,"treated_log_rate_mean":round(avg(tv),5),
+                          "matched_control_log_rate_mean":round(avg(cv),5),
+                          "mean_difference":round(avg(tv)-avg(cv),5)})
+                  trends[label]={"heldout_early_seasons":heldout,"matched_paired_slope_difference":ci,
+                      "equivalence_judgment":status,"trajectory":trajectories}
+              reported=sum(1 for v in balance.values() if v["standardized_difference"] is not None and abs(v["standardized_difference"])<=CAL["max_baseline_absolute_standardized_mean_difference"])
+              result["years"][str(year)]={"selected_eligible_with_borough":len(treated),
+                 "unselected_eligible_with_borough":len(untreated),
+                 "treated_matched":len(t),"treated_unmatched":len(treated)-len(t),
+                 "percent_treated_matched":round(100*len(t)/len(treated),1) if treated else None,
+                 "distinct_matched_control_buildings":len(used),"matched_control_pairs":sum(map(len,pairs.values())),
+                 "balance":balance,"baseline_balance_features_below_margin":reported,
+                 "pretrends":trends,"interpretation":"Only eligible near-comparable matched subset; neither selected outcome means nor treatment effect."}
+              print("YEAR_RESULT",year,json.dumps(result["years"][str(year)],sort_keys=True),flush=True)
+          (OUT/"summary.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
+          print("RESULT_BEGIN",flush=True)
+          print(json.dumps(result,indent=2,sort_keys=True),flush=True)
+          print("RESULT_END",flush=True)
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: municipal-eligible-controls-pretrend-results
+          path: out/public_control_pretrends/
+          if-no-files-found: warn
+          retention-days: 30
