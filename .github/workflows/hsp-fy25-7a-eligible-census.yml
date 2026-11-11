@@ -1,0 +1,141 @@
+name: HSP official FY25 7A candidate exclusion census
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hsp-fy25-7a-eligible-census.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  archive-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Crosswalk every FY25 official appointed 7A building to eligible HSP candidates
+        shell: bash
+        run: |
+          python - <<'PY'
+          """Targeted independent FY2025 7A census: screen all archived FY25 7A
+          properties against observable HSP 2025 candidate conditions. Address range
+          match preserves the special 453/455 Tompkins issue; no model calls.
+          """
+          import collections, concurrent.futures, datetime, hashlib, json, pathlib, re, time, urllib.parse, urllib.request
+          OUT=pathlib.Path("out/hsp_fy25_7a_census");OUT.mkdir(parents=True,exist_ok=True)
+          BASE="https://data.cityofnewyork.us/resource/"
+          UA={"User-Agent":"PublicFY25HousingCourtEligibilityAudit/1.0"}
+          def get(ds,p):
+              u=BASE+ds+".json?"+urllib.parse.urlencode(p)
+              for k in range(3):
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(u,headers=UA),timeout=90) as response:return json.load(response)
+                  except Exception:
+                      if k==2:raise
+                      time.sleep(2*(k+1))
+          def anorm(z):
+              z=str(z or "").upper().replace("’","").replace("'","").strip()
+              for a,b in [("STREET","ST"),("AVENUE","AVE"),("PLACE","PL"),("WEST","W"),("EAST","E")]:
+                  z=re.sub(r"\b"+a+r"\b",b,z)
+              return " ".join(z.split())
+          official_list="1|160|WEST 121 STREET|2017-02-23|\n          1|214|EAST 111 STREET|2019-04-18|2025-02-20\n          1|298|EAST 3 STREET|2019-10-10|\n          1|2081|5 AVENUE|2020-03-03|\n          1|2089|AMSTERDAM AVENUE|2016-01-19|\n          1|2091|AMSTERDAM AVENUE|2016-01-19|\n          1|410|WEST 46 STREET|2023-11-21|\n          2|645|EAST 228 STREET|2017-06-01|\n          2|2328|UNIVERSITY AVENUE|2021-06-10|\n          3|138|WYCKOFF AVENUE|2022-06-17|\n          3|333|MENAHAN STREET|2019-04-29|\n          3|395|LINDEN STREET|2020-03-02|\n          3|284|COOPER STREET|2011-09-01|\n          3|454|BRADFORD STREET|2017-09-30|\n          3|455|TOMPKINS AVENUE|2017-10-10|\n          3|308|HARMAN STREET|2016-07-18|\n          3|438|60 STREET|2022-09-28|\n          3|311|MONTAUK AVENUE|2022-04-15|\n          3|567|ST JOHNS PLACE|2022-07-01|\n          3|992|JEFFERSON AVENUE|2022-08-08|\n          3|306|HARMAN STREET|2022-04-08|\n          3|299|TROUTMAN STREET|2022-04-04|\n          3|225|LYNCH STREET|2023-12-18|\n          3|404|BRIGHTON BEACH AVENUE|2024-03-01|\n          3|205|SUMPTER STREET|2024-08-13|\n          3|463|52 STREET|2025-02-13|\n          3|327|VERNON AVENUE|2017-08-22|2025-01-23"
+          fy25=[]
+          for line in official_list.strip().splitlines():
+              borough,number,street,appointed,discharged=line.split("|")
+              if appointed<="2025-07-01" and (not discharged or discharged>"2025-07-01"):
+                  fy25.append({"boro":borough,"num":int(number),"street":anorm(street),
+                    "appointed":appointed})
+          roads=sorted({(r["boro"],r["street"]) for r in fy25})
+          def address_search(key):
+              b,s=key
+              q={"$select":"buildingid,boroid,boro,housenumber,lowhousenumber,highhousenumber,streetname,legalclassa,managementprogram",
+                 "$where":"boroid="+b+" AND streetname like '%"+(" ".join(s.split()[:-1]) if s.endswith((" ST"," AVE"," PL")) else s).replace("'","")+"%'",
+                 "$limit":1000}
+              arr=get("kj4p-ruqc",q)
+              if len(arr)>=1000:raise RuntimeError("road query capped")
+              return key,arr
+          with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+              route=dict(ex.map(address_search,roads))
+          matched={}; unmatched=[]
+          for p in fy25:
+              arr=route.get((p["boro"],p["street"]),[])
+              found=[]
+              for r in arr:
+                  if anorm(r.get("streetname"))!=p["street"]:continue
+                  try:
+                      lo=int(r.get("lowhousenumber") or r.get("housenumber"))
+                      hi=int(r.get("highhousenumber") or r.get("housenumber"))
+                  except (TypeError,ValueError):continue
+                  if lo<=p["num"]<=hi:
+                      found.append(r)
+              if not found:unmatched.append({"borough_code":p["boro"],"official_house_number":p["num"],"street":p["street"]})
+              for r in found:
+                  i=str(r["buildingid"])
+                  matched[i]={"alias":hashlib.sha256(("rank-2024:"+i).encode()).hexdigest()[:10],
+                    "boro":p["boro"],"official_house_number":p["num"],"street":p["street"],
+                    "current_class_a_units":int(r.get("legalclassa") or 0),"current_management":r.get("managementprogram"),
+                    "appointment_date":p["appointed"]}
+          assert "381702" in matched, "453/455 Tompkins crosswalk not reproduced"
+          ids=",".join(sorted(matched))
+          def query_count(ds,key,date,start,end,extra,agg):
+              w=key+" in ("+ids+") AND "+date+" >= '"+start+"T00:00:00' AND "+date+" < '"+end+"T00:00:00'"+extra
+              a=get(ds,{"$select":key+","+agg+" as n","$where":w,"$group":key,"$limit":3000})
+              if len(a)>=3000:raise RuntimeError("aggregate capped")
+              return {str(q[key]):int(q["n"]) for q in a}
+          bounds={2023:("2023-10-01","2024-06-01"),2024:("2024-10-01","2025-06-01")}
+          v={};a={}
+          for y,(start,end) in bounds.items():
+              v[y]=query_count("wvxf-dwi5","buildingid","novissueddate",start,end,
+                   " AND (novdescription like '%27-2029%' OR novdescription like '%27-2028%')","count(*)")
+              a[y]=query_count("ygpa-z7cr","building_id","received_date",start,end,
+                   " AND major_category='HEAT/HOT WATER' AND apartment is not null","count(distinct apartment)")
+          hsp=get("h4mf-f24e",{"$limit":500})
+          selected={str(r["building_id"]) for r in hsp if str(r.get("program_start_date","")).startswith("2025")}
+          prior={str(r["building_id"]) for r in hsp if str(r.get("program_start_date","")).startswith(("2022","2024"))
+                and str(r.get("current_status","")).upper()=="ACTIVE"}
+          aep=get("hcir-3275",{"$select":"building_id,aep_start_date,discharge_date","$limit":6000})
+          active={str(r["building_id"]) for r in aep if r.get("aep_start_date") and
+            str(r["aep_start_date"])[:10]<="2025-07-01" and
+            (not r.get("discharge_date") or str(r["discharge_date"])[:10]>"2025-07-01")}
+          records=[]
+          for i,r in matched.items():
+              c1,c2=v[2023].get(i,0),v[2024].get(i,0)
+              ap1,ap2=a[2023].get(i,0),a[2024].get(i,0)
+              qualified=(c1>=1 and c2>=1 and c1+c2>=4 and ap1>=2 and ap2>=2 and
+                 r["current_class_a_units"]>=3 and i not in prior and i not in active)
+              records.append({"case":r["alias"],"borocode":r["boro"],"two_season_violations":[c1,c2],
+                  "violation_total":c1+c2,"distinct_apartment_labels":[ap1,ap2],
+                  "qualified_except_7A":qualified,"selected_2025":i in selected,
+                  "current_management_program":r["current_management"],
+                  "FY25_7A_appointment":r["appointment_date"]})
+          records.sort(key=lambda r:(-r["violation_total"],r["case"]))
+          eligible=[r for r in records if r["qualified_except_7A"]]
+          assert any(r["case"]=="fdef087e96" for r in eligible)
+          output={"utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           "FY25_7A_active_schedule_rows":len(fy25),"matched_HPD_BuildingIDs":len(matched),
+           "unmatched_FY25_addresses":unmatched,
+           "eligible_proxy_but_7A_appointed":len(eligible),
+           "qualified_7A_by_borough":dict(collections.Counter(x["borocode"] for x in eligible)),
+           "qualified_7A_case_aliases":[{"case":r["case"],"score":r["violation_total"],"borough_code":r["borocode"]} for r in eligible],
+           "records":records,
+           "asof_interpretation":"FY2025 retrospectively reported appointments/discharges and today's registry address ranges; legal exclusion presumptively applies by July 1 2025 unless separate discharge intervened.",
+           "source_FY25":"https://council.nyc.gov/budget/wp-content/uploads/sites/54/2026/02/HPD-Article-7A-Program-Report.pdf",
+           "caveats":["Addresses not resolvable to current HPD building ID are not treated as proven absences.",
+              "Historical Class A dwelling units, full 7A orders and TPT transfers not audited.",
+              "AEP and older HSP participate as proxy; exact rule exclusions still warrant case documentation."]}
+          (OUT/"fy25_7A_candidate_census.json").write_text(json.dumps(output,indent=2)+"\n")
+          print("7A_CENSUS_BEGIN")
+          print(json.dumps(output,indent=2))
+          print("7A_CENSUS_END")
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fy25-7a-eligible-census
+          path: out/hsp_fy25_7a_census/
+          if-no-files-found: warn
+          retention-days: 60
