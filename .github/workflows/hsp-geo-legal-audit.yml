@@ -412,7 +412,84 @@ jobs:
              "additional_nonenumerated_selection_criteria":"rule section 56-02(a), requires decision-specific record",
              "7A_appointment":"court order or audited official appointment schedule",
              "in_rem_transfer":"judgment + deed + statutory interval, property matched by BBL"},
-           "not_proven":"Specific legal reason for the 2025 selection pair cannot be asserted from non-matching or missing public sources."}
+           "not_proven":"Legal exclusion now supported by official FY25 7A schedule and HPD address-range crosswalk; precise July 1 2025 appointment continuity and historical scoring sheet still require source certification."}
+          # R2: After the independently documented 7A screening, the score boundary
+          # moves from nine to eight; the new tie-break comparison must be evaluated.
+          certified=doc7a(t9)
+          if not certified["appointment_active_at_selection_documented"]:
+              raise RuntimeError("Court appointment source for 9-score candidate did not match HPD building ID/address range")
+          corrected_pool=z["pool"]-{t9}
+          corrected=build(y,corrected_pool)
+          assert corrected["cut"]==8, "Freeze expected boundary migration from 9 to 8"
+          assert len(corrected["above"])==49 and len(corrected["tied_selected"])==1
+          eight_cases=sorted(corrected["tied"])
+          assert len(eight_cases)>=2 and s8 in eight_cases
+          def apt_bounds(i):
+              n=units(i)
+              confirmed=len(counts[y][i])
+              missing=bad[(y,i)]
+              upper=min(n,confirmed+missing)
+              return {"lower":round(confirmed/n,5),"upper":round(upper/n,5),
+                 "confirmed_distinct_units":confirmed,"unidentified_apartment_rows":missing,
+                 "registered_class_a_current":n}
+          eight_rows=[{"case_alias":alias(i),"selected":i in selected[y],
+             "season_1_violations":viol[2023].get(i,0),
+             "season_2_violations":viol[2024].get(i,0),
+             "borough":boro(i),"apartment_fraction_bounds":apt_bounds(i)}
+               for i in eight_cases]
+          eight_rows.sort(key=lambda a:(-a["apartment_fraction_bounds"]["lower"],a["case_alias"]))
+          selrow=next(r for r in eight_rows if r["case_alias"]==alias(s8))
+          selected_rank=next(k+1 for k,r in enumerate(eight_rows) if r["case_alias"]==alias(s8))
+          better_lower=sum(1 for r in eight_rows if not r["selected"] and
+            r["apartment_fraction_bounds"]["lower"]>selrow["apartment_fraction_bounds"]["lower"])
+          definite_outrank=sum(1 for r in eight_rows if not r["selected"] and
+            r["apartment_fraction_bounds"]["lower"]>selrow["apartment_fraction_bounds"]["upper"])
+          out["case_2025_legal_reconstruction"]["post_7A_corrected_boundary"]={
+           "FY25_7A_documented_9_score_building_removed":alias(t9),
+           "remaining_proxy_eligible":len(corrected_pool),
+           "new_score_boundary":corrected["cut"],
+           "above_score_8":len(corrected["above"]),
+           "score_8_candidates":len(corrected["tied"]),
+           "score_8_selected":len(corrected["tied_selected"]),
+           "score_8_unselected":len(corrected["tied_unselected"]),
+           "selected_score_8_alias":alias(s8),
+           "selected_score_8_apartment_fraction_current_proxy":selrow["apartment_fraction_bounds"],
+           "selected_score_8_rank_by_current_confirmed_fraction":selected_rank,
+           "unselected_8_with_higher_confirmed_fraction":better_lower,
+           "unselected_8_definitely_outranking_under_missing_row_bounds":definite_outrank,
+           "score_8_priority_records":eight_rows,
+           "selection_logic":"7A documented exception removes one 9-score candidate; comparison moves to tie-break among 8-score buildings. The current-data fraction is a proxy, not historic HPD ranking."}
+          out["case_2025_legal_reconstruction"]["interpretation_update"]={
+           "former_label":"unexplained_score_order_residual",
+           "current_label":"documented_7A_exclusion_explains_score_order; score8_tie_break_still_requires_historical_ratio_validation",
+           "support":"FY25 official 7A schedule at 455 Tompkins Avenue, same HPD building address-range as 453 Tompkins Avenue; HPD litigation 7A case opened 2016",
+           "one_day_gap":"FY25 report ends June 30, 2025; selection rule targets July 1, 2025; no July 1 dated court order obtained"}
+          # Correct 2025 geographic denominator after excluding documented 7A case.
+          corrected_score_selected=collections.Counter(corrected["score"](i) for i in corrected_pool&selected[y])
+          corrected_score_n=collections.Counter(corrected["score"](i) for i in corrected_pool)
+          rates={v:corrected_score_selected[v]/n for v,n in corrected_score_n.items()}
+          corr_boro=[]
+          for b in ("MN","BX","BK","QN","SI"):
+              members={i for i in corrected_pool if boro(i)==b}
+              obs=len(members&selected[y])
+              ex=sum(rates[corrected["score"](i)] for i in members)
+              curr_units=sum(units(i) for i in members)
+              corr_boro.append({"borough":b,"eligible_after_7A_verified":len(members),
+                  "selected":obs,
+                  "selection_rate":round(obs/len(members),6) if members else None,
+                  "risk_conditioned_expected_selected":round(ex,5),
+                  "observed_minus_risk_expected":round(obs-ex,5),
+                  "eligible_current_class_a_units":curr_units,
+                  "selected_current_class_a_units":sum(units(i) for i in members&selected[y])})
+          assert sum(r["eligible_after_7A_verified"] for r in corr_boro)==len(corrected_pool)
+          assert sum(r["selected"] for r in corr_boro)==50
+          out["geographic_allocation"]["2025"]["legally_corrected_FY25_7A"]={
+           "eligible_proxy_with_confirmed_7A_exclusion":len(corrected_pool),
+           "selected":50,
+           "new_boundary":8,
+           "same_score_expected_borough_allocations":corr_boro,
+           "caveat":"Only independently confirmed single 7A case excluded; other undetected 7A or TPT exclusions may remain."}
+          print("AFTER_7A_BOUNDARY",json.dumps({k:v for k,v in out["case_2025_legal_reconstruction"]["post_7A_corrected_boundary"].items() if k!="score_8_priority_records"},sort_keys=True),flush=True)
           print("CASE_LEGAL_RESULT",json.dumps(out["case_2025_legal_reconstruction"],sort_keys=True),flush=True)
           (OUT/"boundary_support.json").write_text(json.dumps(out,indent=2,sort_keys=True)+"\n",encoding="utf-8")
           print("RESULT_BEGIN")
