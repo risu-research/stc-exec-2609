@@ -79,7 +79,7 @@ jobs:
           allids=set.union(*(z["after_AEP"] for z in pools.values()))
           reg={}
           for chunk in blocks(allids,65):
-              a=get("kj4p-ruqc",{"$select":"buildingid,legalclassa,boro,communityboard,housenumber,streetname,managementprogram","$where":"buildingid in ("+",".join(chunk)+")","$limit":1000})
+              a=get("kj4p-ruqc",{"$select":"buildingid,legalclassa,boro,communityboard,housenumber,lowhousenumber,highhousenumber,streetname,managementprogram","$where":"buildingid in ("+",".join(chunk)+")","$limit":1000})
               if len(a)>=1000:raise RuntimeError("Building registry query truncated")
               reg.update({str(z["buildingid"]):z for z in a})
           print("REGISTRY_QUERY_COMPLETE",len(reg),flush=True)
@@ -261,15 +261,28 @@ jobs:
                 "streetname":addr_norm(z[2]),"appointment":z[3],"discharge":z[4]})
           def doc7a(i,at="2025-07-01"):
               q=reg.get(i,{})
-              addresskey=(bcode(boro(i)),addr_norm(q.get("housenumber")),
-                  addr_norm(q.get("streetname")))
-              hits=[r for r in fy25_7a if (r["boro"],r["housenumber"],r["streetname"])==addresskey]
+              bn=bcode(boro(i))
+              street=addr_norm(q.get("streetname"))
+              primary=addr_norm(q.get("housenumber"))
+              lo=addr_norm(q.get("lowhousenumber") or q.get("housenumber"))
+              hi=addr_norm(q.get("highhousenumber") or q.get("housenumber"))
+              def same_building_alias(r):
+                  if r["boro"]!=bn or r["streetname"]!=street:return False
+                  if r["housenumber"]==primary:return True
+                  if lo.isdigit() and hi.isdigit() and r["housenumber"].isdigit():
+                      return int(lo)<=int(r["housenumber"])<=int(hi)
+                  return False
+              hits=[r for r in fy25_7a if same_building_alias(r)]
               active=[r for r in hits if r["appointment"]<=at and
                       (not r["discharge"] or r["discharge"]>at)]
               return {"schedule_address_match_count":len(hits),
+                "matched_FY25_7A_address_aliases":[{"house_number":r["housenumber"],
+                  "normalized_street":r["streetname"],"comparison":"HPD building house-number inclusive range"} for r in hits],
+                "current_HPD_registered_house_range":{"low":lo,"high":hi},
                 "appointment_active_at_selection_documented":bool(active),
                 "appointment_date_if_matched":[r["appointment"] for r in active],
-                "schedule_absence_is_no_proof_of_no_appointment":True}
+                "schedule_absence_is_no_proof_of_no_appointment":True,
+                "FY25_schedule_is_retrospective_not_July_1_order":True}
           out["audit_extension_version"]="geographic-distribution-and-2025-legal-exclusions-v1"
           out["additional_sources"]={
            "7A_FY2025_schedule":"https://council.nyc.gov/budget/wp-content/uploads/sites/54/2026/02/HPD-Article-7A-Program-Report.pdf",
