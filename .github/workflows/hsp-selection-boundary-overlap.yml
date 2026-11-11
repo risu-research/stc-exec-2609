@@ -1,0 +1,230 @@
+name: HSP observed selection-boundary exact-risk support
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hsp-selection-boundary-overlap.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  exact-risk-overlap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconstruct frozen risk support and legal tie-priority proxies
+        shell: bash
+        run: |
+          python - <<'PY'
+          """HSP threshold overlap / positivity audit.
+          Reconstructs selection risk proxy from official live NYC datasets.
+          Primary target: exactly equal two-season heating violation score at selection boundary.
+          Only aggregate and deterministic pseudonymous summaries are published.
+          No causal-effect, sharp-RD, or actual as-of-2024 registry assertions.
+          """
+          import collections, datetime, hashlib, json, math, pathlib, re, time, urllib.parse, urllib.error, urllib.request
+          URL="https://data.cityofnewyork.us/resource/"
+          HEAD={"User-Agent":"PublicHSPBoundaryOverlapResearch/1.0"}
+          OUT=pathlib.Path("out/hsp_boundary_support");OUT.mkdir(parents=True,exist_ok=True)
+          def get(ds,params):
+              url=URL+ds+".json?"+urllib.parse.urlencode(params)
+              for attempt in range(4):
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(url,headers=HEAD),timeout=135) as response:
+                          arr=json.load(response)
+                          if not isinstance(arr,list):raise ValueError("Socrata non-list response")
+                          return arr
+                  except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError):
+                      if attempt==3:raise
+                      time.sleep(3*(attempt+1))
+          def blocks(xs,n):
+              xs=sorted(xs)
+              for j in range(0,len(xs),n):yield xs[j:j+n]
+          def alias(b):return hashlib.sha256(("rank-2024:"+str(b)).encode()).hexdigest()[:10]
+          def season_map(ds,key,field,st,en,extra,agg):
+              wh=f"{field} >= '{st}T00:00:00' AND {field} < '{en}T00:00:00'"+extra
+              rows=get(ds,{"$select":key+","+agg+" as n","$where":wh,"$group":key,"$limit":50000})
+              if len(rows)>=50000:raise RuntimeError("Potential aggregate truncation: "+ds)
+              return {str(r[key]):int(r["n"]) for r in rows}
+          years={2022:("2022-10-01","2023-06-01"),
+                 2023:("2023-10-01","2024-06-01"),
+                 2024:("2024-10-01","2025-06-01")}
+          viol={};apts={}
+          for y,(start,end) in years.items():
+              viol[y]=season_map("wvxf-dwi5","buildingid","novissueddate",start,end,
+                 " AND (novdescription like '%27-2029%' OR novdescription like '%27-2028%')","count(*)")
+              apts[y]=season_map("ygpa-z7cr","building_id","received_date",start,end,
+                 " AND major_category='HEAT/HOT WATER' AND apartment is not null","count(distinct apartment)")
+              print("SEASON_LOADED",y,len(viol[y]),len(apts[y]),flush=True)
+          hsp=get("h4mf-f24e",{"$limit":500})
+          selected={y:{str(r["building_id"]) for r in hsp if str(r.get("program_start_date","")).startswith(str(y))} for y in (2024,2025)}
+          assert all(len(s)==50 for s in selected.values())
+          aep=get("hcir-3275",{"$select":"building_id,aep_start_date,discharge_date","$limit":6000})
+          if len(aep)>=6000:raise RuntimeError("AEP list truncated")
+          pools={};class_screen={}
+          for y in (2024,2025):
+              first=y-2;last=y-1
+              both=set(viol[first])&set(viol[last])&set(apts[first])&set(apts[last])
+              elig={b for b in both if viol[first][b]+viol[last][b]>=4 and
+                  apts[first][b]>=2 and apts[last][b]>=2}
+              date=f"{y}-07-01"
+              active={str(r["building_id"]) for r in aep if r.get("aep_start_date")
+                 and str(r["aep_start_date"])[:10]<=date and
+                 (not r.get("discharge_date") or str(r["discharge_date"])[:10]>date)}
+              pools[y]={"qualified":elig,"after_AEP":elig-active}
+          allids=set.union(*(z["after_AEP"] for z in pools.values()))
+          reg={}
+          for chunk in blocks(allids,65):
+              a=get("kj4p-ruqc",{"$select":"buildingid,legalclassa,boro","$where":"buildingid in ("+",".join(chunk)+")","$limit":1000})
+              if len(a)>=1000:raise RuntimeError("Building registry query truncated")
+              reg.update({str(z["buildingid"]):z for z in a})
+          print("REGISTRY_QUERY_COMPLETE",len(reg),flush=True)
+          def units(i):
+              try:return int(reg.get(i,{}).get("legalclassa","0"))
+              except (TypeError,ValueError):return 0
+          boroughmap={"1":"MN","2":"BX","3":"BK","4":"QN","5":"SI","MANHATTAN":"MN","BRONX":"BX","BROOKLYN":"BK","QUEENS":"QN","STATEN ISLAND":"SI"}
+          def boro(i):
+              v=str(reg.get(i,{}).get("boro","")).upper().strip()
+              return boroughmap.get(v,v if v in ("MN","BX","BK","QN","SI") else None)
+          for y,s in pools.items():
+              after={b for b in s["after_AEP"] if units(b)>=3}
+              # Hold two complete input definitions separate; scenario B stricter
+              prior_main={str(r["building_id"]) for r in hsp if str(r.get("program_start_date","")).startswith(("2022",) if y==2024 else ("2022","2024")) and str(r.get("current_status","")).upper()=="ACTIVE"}
+              prior_strict={str(r["building_id"]) for r in hsp if str(r.get("program_start_date",""))[:4]<str(y) and str(r.get("current_status","")).upper()=="ACTIVE"}
+              s.update({"after_class":after,"prior_main":prior_main,"prior_strict":prior_strict,
+                "main":after-prior_main,"strict":after-prior_strict})
+          # Compute exact score distributions for all scenarios, do not tune to selected labels
+          def build(year,pool):
+              score=lambda i:viol[year-2].get(i,0)+viol[year-1].get(i,0)
+              rank=sorted(pool,key=lambda i:(-score(i),i))
+              if len(rank)<50:raise RuntimeError("fewer than 50 eligible candidates")
+              cut=score(rank[49]);above={i for i in pool if score(i)>cut}
+              tied={i for i in pool if score(i)==cut}
+              below={i for i in pool if score(i)<cut}
+              sel=selected[year]
+              return {"pool":pool,"cut":cut,"score":score,"above":above,"tied":tied,"below":below,
+                      "tied_selected":tied&sel,"tied_unselected":tied-sel}
+          ref={y:build(y,pools[y]["main"]) for y in (2024,2025)}
+          # Tie-break rate needs union of apartment IDs over the TWO seasons; exact labels
+          # are not always normalizable. Pull ONLY matched cutoff and near-cutoff subset,
+          # no published apartment identifiers.
+          tie_candidates=set()
+          for y,z in ref.items():
+              cut=z["cut"]
+              tie_candidates|={i for i in z["pool"] if abs(z["score"](i)-cut)<=1}
+          def norm_ap(s):
+              if s is None:return None
+              v=" ".join(str(s).strip().upper().replace("#","").replace("APARTMENT","").replace("APT","").split())
+              if v in {"","ALL","COMMON AREA","PUBLIC AREA","BLDG","BUILDING","LOBBY","UNKNOWN","N/A"}:return None
+              return v
+          counts=collections.defaultdict(lambda:collections.defaultdict(set))
+          bad=collections.Counter();raw=collections.Counter()
+          for y in (2024,2025):
+              candidates={i for i in ref[y]["pool"] if abs(ref[y]["score"](i)-ref[y]["cut"])<=1}
+              start=years[y-2][0];end=years[y-1][1]
+              for chunk in blocks(candidates,25):
+                  result=get("ygpa-z7cr",{"$select":"building_id,apartment","$where":"building_id in ("+",".join(chunk)+") AND received_date >= '"+start+"T00:00:00' AND received_date < '"+end+"T00:00:00' AND major_category='HEAT/HOT WATER'","$limit":45000})
+                  if len(result)>=45000:raise RuntimeError("Tie ratio apartment query truncated")
+                  for row in result:
+                      i=str(row["building_id"])
+                      raw[(y,i)]+=1
+                      x=norm_ap(row.get("apartment"))
+                      if x:counts[y][i].add(x)
+                      else:bad[(y,i)]+=1
+              print("TIE_COMPLAINT_ROWS_LOADED",y,len(candidates),flush=True)
+          out={"checked_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           "rule_reference":"28 RCNY 56-02(a)-(c) effective June 1 2024",
+           "rule_prepriority":"two seasons >=1 27-2029(a)/27-2028 violation each, heat complaint >=2 distinct units each; rank 50 by total violations >=4, tied by percentage of complaining units",
+           "decision_boundary":"50th highest observed heat-law text proxy score in reconstructed qualified pool, not official HPD scoring sheet",
+           "primary_eligibility":"AEP active as of July 1 proxy; current HPD legalclassa >=3; 2022-only previous HSP active proxy for 2024, 2022+2024 for 2025",
+           "sensitivity_eligibility":"also remove all earlier active HSP cohorts including 2020; 2024/25 exact score support assessed both ways",
+           "predeclared_tie_compatibility":{"borough_exact":True,"max_unit_count_factor":2.0,
+             "max_abs_two_season_complaint_unit_fraction_difference":0.10,
+             "same_split_counts_required_separately":True},
+           "years":{},"warnings":[
+           "Current HPD building class A counts and location are not historical decision-date records",
+           "AEP and prior HSP participation are incomplete eligibility screens; 7A and in-rem statuses are unverified",
+           "Description text substring is not a verified historical 27-2029(a) issuance code or contemporaneous violation snapshot",
+           "Apartment labels are raw public values; normalized distinct-unit count is a noisy proxy of percent of dwellings with heat-related complaints",
+           "No claim that selecting based on a rank alone identifies a regression discontinuity or randomized treatment",
+           "Counts of compatible pairs reflect administrative record support only, not valid causal exchangeability"]}
+          for y in (2024,2025):
+              z=ref[y];sc=z["score"];sel=selected[y]
+              assert len(z["above"]) + len(z["tied"]) + len(z["below"])==len(z["pool"])
+              ts=sorted(z["tied_selected"]);cs=sorted(z["tied_unselected"])
+              fraction=lambda i:len(counts[y][i])/units(i) if units(i)>0 else None
+              pairs={}
+              gates=collections.Counter()
+              for a in ts:
+                  for b in cs:
+                      gates["exact_risk_score"]+=1
+                      same_splits=(viol[y-2].get(a,0),viol[y-1].get(a,0))==(viol[y-2].get(b,0),viol[y-1].get(b,0))
+                      if same_splits:gates["also_same_season_split"]+=1
+                      if boro(a)!=boro(b) or boro(a) is None:continue
+                      gates["plus_same_borough"]+=1
+                      fr=units(a)/units(b) if units(b) else 1e9
+                      if not 0.5<=fr<=2.0:continue
+                      gates["plus_unit_factor_two"]+=1
+                      fd=abs(fraction(a)-fraction(b))
+                      if fd>0.10:continue
+                      gates["plus_complaint_fraction_10pp"]+=1
+                      if same_splits:gates["plus_all_and_same_split"]+=1
+                      pairs[(a,b)]={"same_season_counts":same_splits,"fraction_difference":round(fd,5),
+                           "size_ratio":round(fr,5),"same_borough":True}
+              margin={str(s):{"selected":sum(sc(i)==s for i in z["pool"]&sel),
+                                "not_selected":sum(sc(i)==s for i in z["pool"]-sel)}
+                    for s in [z["cut"]-2,z["cut"]-1,z["cut"],z["cut"]+1,z["cut"]+2]}
+              # Was the actual selected outcome deterministic around score threshold?
+              cut=z["cut"]
+              tie_evidence=sorted([{"case":alias(i),"selected":i in sel,
+                   "violation_total_proxy":sc(i),
+                   "season_1_violations":viol[y-2].get(i,0),"season_2_violations":viol[y-1].get(i,0),
+                   "current_legal_class_a":units(i),
+                   "two_season_distinct_unit_proxy":len(counts[y][i]),
+                   "noisy_apartment_fraction":round(fraction(i),5),
+                   "unknown_apartment_rows":bad[(y,i)]}
+                   for i in z["tied"]],key=lambda q:(-q["noisy_apartment_fraction"],q["case"]))
+              strict=build(y,pools[y]["strict"])
+              out["years"][str(y)]={
+                "source_eligible_primary":len(z["pool"]),"source_eligible_strict":len(strict["pool"]),
+                "selected_in_eligible_primary":len(z["pool"]&sel),
+                "selected_omitted_by_primary_proxy":len(sel-z["pool"]),
+                "rank50_score_primary":cut,
+                "rank50_score_strict":strict["cut"],
+                "above_cutoff":{"total":len(z["above"]),"selected":len(z["above"]&sel),"unselected":len(z["above"]-sel)},
+                "at_cutoff":{"total":len(z["tied"]),"selected":len(ts),"unselected":len(cs)},
+                "below_cutoff":{"total":len(z["below"]),"selected":len(z["below"]&sel),"unselected":len(z["below"]-sel)},
+                "exact_score_margin_distribution":margin,
+                "strict_sensitivity":{"at_cutoff_total":len(strict["tied"]),
+                    "at_cutoff_selected":len(strict["tied_selected"]),
+                    "at_cutoff_unselected":len(strict["tied_unselected"]),
+                    "above_cutoff_unselected":len(strict["above"]-sel)},
+                "matched_tie_support":{
+                    "selected_tied_buildings_with_any_exact_score_unselected":len(ts) if cs else 0,
+                    "unselected_tied_buildings":len(cs),
+                    "pair_gate_counts":dict(gates),
+                    "distinct_selected_after_all_gates":len({a for a,b in pairs}),
+                    "distinct_unselected_after_all_gates":len({b for a,b in pairs}),
+                    "all_gates_with_same_season_counts_selected":len({a for a,b in pairs if pairs[(a,b)]["same_season_counts"]}),
+                    "complete_pair_aliases":[{"selected":alias(a),"unselected":alias(b),**r} for (a,b),r in sorted(pairs.items())][:60]},
+                "tie_cases_pseudonymous":tie_evidence,
+                "any_official_selected_below_observed_cut":len(z["below"]&sel),
+                "risk_score_vector_not_yet_independently_historically_verified":True}
+              print("COHORT_RESULT",y,json.dumps({k:v for k,v in out["years"][str(y)].items() if k!="tie_cases_pseudonymous"},sort_keys=True),flush=True)
+          (OUT/"boundary_support.json").write_text(json.dumps(out,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+          print("RESULT_BEGIN")
+          print(json.dumps(out,indent=2,sort_keys=True))
+          print("RESULT_END")
+          
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hsp-observed-boundary-risk-support
+          path: out/hsp_boundary_support/
+          if-no-files-found: warn
+          retention-days: 45
