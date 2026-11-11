@@ -121,11 +121,11 @@ jobs:
           def one(spec):
               label,idx,chunk=spec
               if label=="complaints":
-                  ds,key,dt,add,agg="ygpa-z7cr","building_id","received_date",
-                    " AND major_category in ('HEAT/HOT WATER','HEATING')","count(distinct complaint_id)"
+                  ds,key,dt,add,agg=("ygpa-z7cr","building_id","received_date",
+                    " AND major_category in ('HEAT/HOT WATER','HEATING')","count(distinct complaint_id)")
               else:
-                  ds,key,dt,add,agg="wvxf-dwi5","buildingid","novissueddate",
-                    " AND (novdescription like '%27-2029%' OR novdescription like '%27-2028%')","count(distinct violationid)"
+                  ds,key,dt,add,agg=("wvxf-dwi5","buildingid","novissueddate",
+                    " AND (novdescription like '%27-2029%' OR novdescription like '%27-2028%')","count(distinct violationid)")
               ye="date_extract_y("+dt+")";mo="date_extract_m("+dt+")"
               where=key+" in ("+",".join(chunk)+") AND "+dt+" >= '2018-10-01T00:00:00' AND "+dt+" < '2025-06-01T00:00:00'"+add
               q={"$select":key+","+ye+" as yr,"+mo+" as mo,"+agg+" as n",
