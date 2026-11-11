@@ -1,0 +1,49 @@
+{
+  "bundle_type": "retrospective evidence-gated public administrative audit",
+  "source_data_rule": "Read-only prior successful GitHub Actions outputs; no source observations imputed",
+  "inputs": {
+    "official_reconciliation.json": {
+      "sha256": "6b370bf6ae562c9e831d0bb927d52843588b21ca9c31b70633dc277a413059ab",
+      "bytes": 4543
+    },
+    "boundary_support.json": {
+      "sha256": "d72fc25be37d5178457944b6dd70a1906b18a6bd9ce832aa2c1789b8d46f76cc",
+      "bytes": 17220
+    },
+    "control_pretrends.json": {
+      "sha256": "055ddc5b393916d2cc5fb5fa8629bb4a06569d91a757677fe0204e64c07721b7",
+      "bytes": 10563
+    },
+    "registry_crosscheck.json": {
+      "sha256": "ef4f6f0fe5ea49b65909bf1d95ddb2479ca0674c3176db951663fc617f8df2c4",
+      "bytes": 1389
+    },
+    "external_claims.json": {
+      "sha256": "3dd160c1e5780cb16e739c0aa1154fba53616c4a15fdd5ecc37a39d5c0408fb3",
+      "bytes": 3109
+    }
+  },
+  "code_dependency": "stdlib only",
+  "anchors": {
+    "reconciliation": {
+      "run": 42941459831,
+      "repo": "risu-research/formal-exec-2609",
+      "conclusion": "success"
+    },
+    "controls": {
+      "run": 42944595738,
+      "repo": "risu-research/stc-exec-2609",
+      "conclusion": "success"
+    },
+    "boundary": {
+      "run": 42949011539,
+      "repo": "risu-research/stc-exec-2609",
+      "conclusion": "success"
+    },
+    "heldout_2025": {
+      "run": 42926868735,
+      "repo": "risu-research/risu-verify",
+      "conclusion": "success"
+    }
+  }
+}

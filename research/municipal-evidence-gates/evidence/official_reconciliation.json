@@ -1,0 +1,150 @@
+{
+  "checked_utc": "2026-11-11T01:47:33.430783+00:00",
+  "source_dataset_ids": [
+    "h4mf-f24e",
+    "64uk-42ks",
+    "wvxf-dwi5",
+    "kj4p-ruqc"
+  ],
+  "selected_cohort_rows": {
+    "2024": 50,
+    "2025": 50
+  },
+  "official_pdfs": {
+    "2024": {
+      "sha256": "1f879432ad2467c9e6e8cd3744171a38b0f734b338e0f8863056405875e04cef",
+      "rows": 50,
+      "address_matches": 50,
+      "current_HSP_unit_mismatches": [
+        {
+          "address_key": [
+            "BX",
+            "2509",
+            "TRATMAN AVE"
+          ],
+          "official_units": 71,
+          "current_HSP_units": 72,
+          "bbl": "2039820001",
+          "bin": "2092993"
+        }
+      ],
+      "official_unmatched": [],
+      "api_unmatched": []
+    },
+    "2025": {
+      "sha256": "3e7392df52ddb6a9a1b322952ddf766252d6c0fef2abdd44a1f8ce2ba4d16dce",
+      "rows": 50,
+      "address_matches": 48,
+      "current_HSP_unit_mismatches": [],
+      "official_unmatched": [
+        [
+          "BK",
+          "2915",
+          "CLAREDON ROAD"
+        ],
+        [
+          "MN",
+          "354",
+          "LENOX AVE"
+        ]
+      ],
+      "api_unmatched": [
+        [
+          "BK",
+          "2915",
+          "CLARENDON ROAD"
+        ],
+        [
+          "MN",
+          "70",
+          "WEST 128 ST"
+        ]
+      ]
+    }
+  },
+  "archives": {
+    "2024": {
+      "attempts": [
+        {
+          "version": "24v2",
+          "url": "https://www.nyc.gov/assets/planning/download/zip/data-maps/open-data/nyc_pluto_24v2_csv.zip",
+          "error": "HTTPError:HTTP Error 404: Not Found"
+        },
+        {
+          "version": "24v2",
+          "url": "https://s-media.nyc.gov/agencies/dcp/assets/files/zip/data-tools/bytes/nyc_pluto_24v2_csv.zip",
+          "error": "HTTPError:HTTP Error 404: Not Found"
+        },
+        {
+          "version": "24v1.1",
+          "url": "https://www.nyc.gov/assets/planning/download/zip/data-maps/open-data/nyc_pluto_24v1.1_csv.zip",
+          "error": "HTTPError:HTTP Error 404: Not Found"
+        },
+        {
+          "version": "24v1.1",
+          "url": "https://s-media.nyc.gov/agencies/dcp/assets/files/zip/data-tools/bytes/nyc_pluto_24v1.1_csv.zip",
+          "error": "HTTPError:HTTP Error 404: Not Found"
+        }
+      ],
+      "extracted_archive": null
+    },
+    "2025": {
+      "attempts": [
+        {
+          "version": "25v2",
+          "url": "https://www.nyc.gov/assets/planning/download/zip/data-maps/open-data/nyc_pluto_25v2_csv.zip",
+          "error": "HTTPError:HTTP Error 404: Not Found"
+        },
+        {
+          "version": "25v2",
+          "url": "https://s-media.nyc.gov/agencies/dcp/assets/files/zip/data-tools/bytes/nyc_pluto_25v2_csv.zip",
+          "error": "HTTPError:HTTP Error 404: Not Found"
+        },
+        {
+          "version": "25v1",
+          "url": "https://www.nyc.gov/assets/planning/download/zip/data-maps/open-data/nyc_pluto_25v1_csv.zip",
+          "error": "HTTPError:HTTP Error 404: Not Found"
+        },
+        {
+          "version": "25v1",
+          "url": "https://s-media.nyc.gov/agencies/dcp/assets/files/zip/data-tools/bytes/nyc_pluto_25v1_csv.zip",
+          "error": "HTTPError:HTTP Error 404: Not Found"
+        }
+      ],
+      "extracted_archive": null
+    }
+  },
+  "case_date_test": {
+    "case_alias": "4928681573",
+    "records_in_issue_date_window": 86,
+    "qualifying_legal_code_proxy_total": 8,
+    "counts_by_heating_season_and_field": {
+      "2023": {
+        "novissueddate": 3,
+        "approveddate": 3,
+        "inspectiondate": 3
+      },
+      "2024": {
+        "novissueddate": 5,
+        "approveddate": 5,
+        "inspectiondate": 5
+      }
+    },
+    "cross_season_or_missing_date_cases": [],
+    "cross_season_case_count": 0,
+    "assessment": "Do not shift rule's event date to fit selected outcome"
+  },
+  "limitations": [
+    "PLUTO UnitsRes is tax-lot total, never the building-specific registered Class A legal dwelling-unit denominator.",
+    "Current HSP and PLUTO snapshots are not 2024 or 2025 scoring snapshots.",
+    "Historical DCP ZIP endpoint discovery is a limited probe, not proof of archive absence.",
+    "A 2025 regulation based on criteria including but not limited to observed counts does not guarantee exact deterministic match."
+  ],
+  "current_PLUTO_taxlots": {
+    "requested_distinct_BBLs": 99,
+    "matched_current_PLUTO_BBLs": 99,
+    "comparison_level": "BBL/tax lot; cannot substitute for legal building denominator",
+    "2024_mismatches": [],
+    "2025_mismatches": []
+  }
+}

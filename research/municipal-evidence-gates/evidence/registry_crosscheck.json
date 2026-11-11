@@ -1,0 +1,33 @@
+{
+  "verification_type": "current HPD building registry & latest registration, not historical archived 2024/2025 record",
+  "sources": [
+    "NYC Open Data kj4p-ruqc (HPD Buildings)",
+    "NYC Open Data tesw-yqqr (Multiple Dwelling Registrations)",
+    "NYC Open Data h4mf-f24e (HSP)"
+  ],
+  "checked_case_2024": {
+    "address": "2509 Tratman Avenue",
+    "bin": "2092993",
+    "buildingid": "807000",
+    "official_pdf_2024_units": 71,
+    "current_hsp_units": 72,
+    "current_hpd_legalclassa": 72,
+    "lastregistrationdate": "2026-09-02",
+    "registrationenddate": "2027-09-01",
+    "same_bbl": "2039820001"
+  },
+  "checked_case_2025": {
+    "official_pdf_address": "354 Lenox Avenue",
+    "current_api_address": "70 West 128 Street",
+    "bin": "1053660",
+    "buildingid": "23557",
+    "bbl": "1017250069",
+    "official_pdf_2025_units": 9,
+    "current_hsp_units": 18,
+    "current_hpd_legalclassa": 18,
+    "lastregistrationdate": "2026-10-03",
+    "registrationenddate": "2027-09-01",
+    "provenance_caveat": "Do not equate historic PDF address to current building unit population until historical address crosswalk is confirmed."
+  },
+  "takeaway": "Current HPD building-level Class A counts coincide with current HSP and PLUTO tax-lot counts for these two sites, but the registration dates are in 2026, so the 2024/2025 actual decision-time denominator remains unverified."
+}

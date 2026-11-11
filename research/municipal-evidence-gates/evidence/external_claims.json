@@ -1,0 +1,69 @@
+{
+  "nyc_rule": {
+    "source": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCrules/0-0-0-127069",
+    "section": "28 RCNY §56-02(a)-(c)",
+    "rule_effective": "2024-06-01",
+    "type": "legal_rule",
+    "critical_note": "Including but not limited to; excludes AEP, appointed 7A, specified in-rem; tie priority only if 50 limit exceeded."
+  },
+  "nyc_program": {
+    "source": "https://www.nyc.gov/site/hpd/services-and-information/heat-sensors-program.page",
+    "type": "administrative_program",
+    "mechanisms": [
+      "required temperature sensor",
+      "proactive monitoring visits",
+      "reporting",
+      "violation/civil penalties"
+    ]
+  },
+  "comptroller_2025": {
+    "source": "https://comptroller.nyc.gov/reports/turn-up-the-heat-2025-update/",
+    "published": "2025-03-03",
+    "type": "agency_intervention_comparison",
+    "claims_reported": {
+      "2017_2021_averaged_complaint_reduction_pct": 63,
+      "2022_2024_averaged_complaint_reduction_pct": 46
+    },
+    "method_described": "compare heat complaints after versus before intervention",
+    "scope": "earlier 2022-2024 heat seasons, not a 2024/25 newly selected building causal estimate",
+    "causal_assumptions_verified": false
+  },
+  "mayor_pmmr_2026": {
+    "source": "https://www.nyc.gov/assets/operations/downloads/pdf/pmmr2026/2026_pmmr.pdf",
+    "source_definitions": "https://www.nyc.gov/assets/operations/downloads/pdf/pmmr2026/2026_idf.pdf",
+    "published": "2026-03",
+    "type": "managerial_performance_indicator",
+    "time_window": "first four months of FY2025 vs FY2026",
+    "measure": "Proactive Building Visits—Heat Sensor Program",
+    "definition": "number of visits ATTEMPTED, not completed inspections",
+    "visits_attempted_prior": 181,
+    "visits_attempted_current": 251,
+    "heat_hot_water_reported_problems_current_citywide": 26279,
+    "heat_hot_water_reported_problems_change_pct_citywide": 39,
+    "scope_warning": "Citywide heat/hot water problem counts are not HSP building-specific; attempts are not completed visits or direct temperature results."
+  },
+  "research_prior_descriptives": {
+    "source": "user-supplied recovered conversation handoff, not independently rerun for this bundle",
+    "type": "prior_descriptive",
+    "new_cohort_2024": {
+      "n_buildings": 49,
+      "before_heat_complaints": 3281,
+      "after_heat_complaints": 2367,
+      "before_all_violations": 5829,
+      "after_all_violations": 7008
+    },
+    "cohort_2025": {
+      "n_buildings": 50,
+      "before_heat_complaints": 4526,
+      "after_heat_complaints": 2639,
+      "before_all_violations": 5233,
+      "after_all_violations": 8052
+    },
+    "limitations": "Unadjusted before/after figures; all-category violations unlike selection heat-law proxy; cross-season measures; not causal."
+  },
+  "methods": {
+    "roth2022": "https://doi.org/10.1257/aeri.20210236",
+    "rambachan_roth_2023": "https://doi.org/10.1093/restud/rdad018",
+    "limitations": "Pretrend non-rejection cannot establish parallel trends; sensitivity methods require actual assumptions, estimand, and data."
+  }
+}

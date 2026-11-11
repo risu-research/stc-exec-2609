@@ -1,0 +1,520 @@
+{
+  "checked_utc": "2026-11-11T03:13:07.252709+00:00",
+  "decision_boundary": "50th highest observed heat-law text proxy score in reconstructed qualified pool, not official HPD scoring sheet",
+  "predeclared_tie_compatibility": {
+    "borough_exact": true,
+    "max_abs_two_season_complaint_unit_fraction_difference": 0.1,
+    "max_unit_count_factor": 2.0,
+    "same_split_counts_required_separately": true
+  },
+  "primary_eligibility": "AEP active as of July 1 proxy; current HPD legalclassa >=3; 2022-only previous HSP active proxy for 2024, 2022+2024 for 2025",
+  "rule_prepriority": "two seasons >=1 27-2029(a)/27-2028 violation each, heat complaint >=2 distinct units each; rank 50 by total violations >=4, tied by percentage of complaining units",
+  "rule_reference": "28 RCNY 56-02(a)-(c) effective June 1 2024",
+  "sensitivity_eligibility": "also remove all earlier active HSP cohorts including 2020; 2024/25 exact score support assessed both ways",
+  "warnings": [
+    "Current HPD building class A counts and location are not historical decision-date records",
+    "AEP and prior HSP participation are incomplete eligibility screens; 7A and in-rem statuses are unverified",
+    "Description text substring is not a verified historical 27-2029(a) issuance code or contemporaneous violation snapshot",
+    "Apartment labels are raw public values; normalized distinct-unit count is a noisy proxy of percent of dwellings with heat-related complaints",
+    "No claim that selecting based on a rank alone identifies a regression discontinuity or randomized treatment",
+    "Counts of compatible pairs reflect administrative record support only, not valid causal exchangeability"
+  ],
+  "years": {
+    "2024": {
+      "above_cutoff": {
+        "selected": 35,
+        "total": 35,
+        "unselected": 0
+      },
+      "any_official_selected_below_observed_cut": 0,
+      "at_cutoff": {
+        "selected": 15,
+        "total": 16,
+        "unselected": 1
+      },
+      "below_cutoff": {
+        "selected": 0,
+        "total": 237,
+        "unselected": 237
+      },
+      "exact_score_margin_distribution": {
+        "10": {
+          "not_selected": 0,
+          "selected": 6
+        },
+        "11": {
+          "not_selected": 0,
+          "selected": 10
+        },
+        "7": {
+          "not_selected": 28,
+          "selected": 0
+        },
+        "8": {
+          "not_selected": 12,
+          "selected": 0
+        },
+        "9": {
+          "not_selected": 1,
+          "selected": 15
+        }
+      },
+      "matched_tie_support": {
+        "all_gates_with_same_season_counts_selected": 0,
+        "complete_pair_aliases": [
+          {
+            "fraction_difference": 0.04941,
+            "same_borough": true,
+            "same_season_counts": false,
+            "selected": "04fe113fd9",
+            "size_ratio": 0.63768,
+            "unselected": "df437351ad"
+          },
+          {
+            "fraction_difference": 0.01205,
+            "same_borough": true,
+            "same_season_counts": false,
+            "selected": "76f8f4b7f4",
+            "size_ratio": 1.46377,
+            "unselected": "df437351ad"
+          }
+        ],
+        "distinct_selected_after_all_gates": 2,
+        "distinct_unselected_after_all_gates": 1,
+        "pair_gate_counts": {
+          "also_same_season_split": 3,
+          "exact_risk_score": 15,
+          "plus_complaint_fraction_10pp": 2,
+          "plus_same_borough": 9,
+          "plus_unit_factor_two": 7
+        },
+        "selected_tied_buildings_with_any_exact_score_unselected": 15,
+        "unselected_tied_buildings": 1
+      },
+      "rank50_score_primary": 9,
+      "rank50_score_strict": 9,
+      "risk_score_vector_not_yet_independently_historically_verified": true,
+      "selected_in_eligible_primary": 50,
+      "selected_omitted_by_primary_proxy": 0,
+      "source_eligible_primary": 288,
+      "source_eligible_strict": 281,
+      "strict_sensitivity": {
+        "above_cutoff_unselected": 0,
+        "at_cutoff_selected": 14,
+        "at_cutoff_total": 15,
+        "at_cutoff_unselected": 1
+      },
+      "tie_cases_pseudonymous": [
+        {
+          "case": "1fb813bead",
+          "current_legal_class_a": 6,
+          "noisy_apartment_fraction": 0.5,
+          "season_1_violations": 4,
+          "season_2_violations": 5,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 3,
+          "unknown_apartment_rows": 13,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "6d404696d3",
+          "current_legal_class_a": 12,
+          "noisy_apartment_fraction": 0.5,
+          "season_1_violations": 1,
+          "season_2_violations": 8,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 6,
+          "unknown_apartment_rows": 18,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "f5eb7c2307",
+          "current_legal_class_a": 39,
+          "noisy_apartment_fraction": 0.46154,
+          "season_1_violations": 3,
+          "season_2_violations": 6,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 18,
+          "unknown_apartment_rows": 18,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "bddc83a22a",
+          "current_legal_class_a": 9,
+          "noisy_apartment_fraction": 0.44444,
+          "season_1_violations": 1,
+          "season_2_violations": 8,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 4,
+          "unknown_apartment_rows": 16,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "fea79bb097",
+          "current_legal_class_a": 11,
+          "noisy_apartment_fraction": 0.36364,
+          "season_1_violations": 3,
+          "season_2_violations": 6,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 4,
+          "unknown_apartment_rows": 25,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "3a81a31d8f",
+          "current_legal_class_a": 91,
+          "noisy_apartment_fraction": 0.30769,
+          "season_1_violations": 5,
+          "season_2_violations": 4,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 28,
+          "unknown_apartment_rows": 97,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "5f098ecacb",
+          "current_legal_class_a": 56,
+          "noisy_apartment_fraction": 0.30357,
+          "season_1_violations": 7,
+          "season_2_violations": 2,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 17,
+          "unknown_apartment_rows": 26,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "141d81432f",
+          "current_legal_class_a": 84,
+          "noisy_apartment_fraction": 0.2619,
+          "season_1_violations": 4,
+          "season_2_violations": 5,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 22,
+          "unknown_apartment_rows": 63,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "60eabeb2e2",
+          "current_legal_class_a": 49,
+          "noisy_apartment_fraction": 0.22449,
+          "season_1_violations": 1,
+          "season_2_violations": 8,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 11,
+          "unknown_apartment_rows": 102,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "b9a3c41b0c",
+          "current_legal_class_a": 98,
+          "noisy_apartment_fraction": 0.19388,
+          "season_1_violations": 3,
+          "season_2_violations": 6,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 19,
+          "unknown_apartment_rows": 80,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "04fe113fd9",
+          "current_legal_class_a": 44,
+          "noisy_apartment_fraction": 0.13636,
+          "season_1_violations": 1,
+          "season_2_violations": 8,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 6,
+          "unknown_apartment_rows": 2,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "c3e989a9e3",
+          "current_legal_class_a": 156,
+          "noisy_apartment_fraction": 0.13462,
+          "season_1_violations": 5,
+          "season_2_violations": 4,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 21,
+          "unknown_apartment_rows": 15,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "a3b41c11ef",
+          "current_legal_class_a": 58,
+          "noisy_apartment_fraction": 0.12069,
+          "season_1_violations": 4,
+          "season_2_violations": 5,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 7,
+          "unknown_apartment_rows": 10,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "a5ac4b1e74",
+          "current_legal_class_a": 232,
+          "noisy_apartment_fraction": 0.11638,
+          "season_1_violations": 1,
+          "season_2_violations": 8,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 27,
+          "unknown_apartment_rows": 23,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "76f8f4b7f4",
+          "current_legal_class_a": 101,
+          "noisy_apartment_fraction": 0.09901,
+          "season_1_violations": 5,
+          "season_2_violations": 4,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 10,
+          "unknown_apartment_rows": 108,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "df437351ad",
+          "current_legal_class_a": 69,
+          "noisy_apartment_fraction": 0.08696,
+          "season_1_violations": 3,
+          "season_2_violations": 6,
+          "selected": false,
+          "two_season_distinct_unit_proxy": 6,
+          "unknown_apartment_rows": 60,
+          "violation_total_proxy": 9
+        }
+      ]
+    },
+    "2025": {
+      "above_cutoff": {
+        "selected": 36,
+        "total": 36,
+        "unselected": 0
+      },
+      "any_official_selected_below_observed_cut": 1,
+      "at_cutoff": {
+        "selected": 13,
+        "total": 14,
+        "unselected": 1
+      },
+      "below_cutoff": {
+        "selected": 1,
+        "total": 340,
+        "unselected": 339
+      },
+      "exact_score_margin_distribution": {
+        "10": {
+          "not_selected": 0,
+          "selected": 10
+        },
+        "11": {
+          "not_selected": 0,
+          "selected": 8
+        },
+        "7": {
+          "not_selected": 24,
+          "selected": 0
+        },
+        "8": {
+          "not_selected": 26,
+          "selected": 1
+        },
+        "9": {
+          "not_selected": 1,
+          "selected": 13
+        }
+      },
+      "matched_tie_support": {
+        "all_gates_with_same_season_counts_selected": 0,
+        "complete_pair_aliases": [
+          {
+            "fraction_difference": 0.0625,
+            "same_borough": true,
+            "same_season_counts": false,
+            "selected": "aaddd68709",
+            "size_ratio": 2.0,
+            "unselected": "fdef087e96"
+          }
+        ],
+        "distinct_selected_after_all_gates": 1,
+        "distinct_unselected_after_all_gates": 1,
+        "pair_gate_counts": {
+          "also_same_season_split": 3,
+          "exact_risk_score": 13,
+          "plus_complaint_fraction_10pp": 1,
+          "plus_same_borough": 3,
+          "plus_unit_factor_two": 1
+        },
+        "selected_tied_buildings_with_any_exact_score_unselected": 13,
+        "unselected_tied_buildings": 1
+      },
+      "rank50_score_primary": 9,
+      "rank50_score_strict": 9,
+      "risk_score_vector_not_yet_independently_historically_verified": true,
+      "selected_in_eligible_primary": 50,
+      "selected_omitted_by_primary_proxy": 0,
+      "source_eligible_primary": 390,
+      "source_eligible_strict": 386,
+      "strict_sensitivity": {
+        "above_cutoff_unselected": 0,
+        "at_cutoff_selected": 13,
+        "at_cutoff_total": 14,
+        "at_cutoff_unselected": 1
+      },
+      "tie_cases_pseudonymous": [
+        {
+          "case": "9fae17c66a",
+          "current_legal_class_a": 22,
+          "noisy_apartment_fraction": 0.72727,
+          "season_1_violations": 1,
+          "season_2_violations": 8,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 16,
+          "unknown_apartment_rows": 38,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "3a4204a0df",
+          "current_legal_class_a": 22,
+          "noisy_apartment_fraction": 0.54545,
+          "season_1_violations": 3,
+          "season_2_violations": 6,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 12,
+          "unknown_apartment_rows": 169,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "59d649c268",
+          "current_legal_class_a": 23,
+          "noisy_apartment_fraction": 0.47826,
+          "season_1_violations": 8,
+          "season_2_violations": 1,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 11,
+          "unknown_apartment_rows": 10,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "fdcf7744a6",
+          "current_legal_class_a": 36,
+          "noisy_apartment_fraction": 0.47222,
+          "season_1_violations": 5,
+          "season_2_violations": 4,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 17,
+          "unknown_apartment_rows": 12,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "2e95b22cbc",
+          "current_legal_class_a": 38,
+          "noisy_apartment_fraction": 0.42105,
+          "season_1_violations": 3,
+          "season_2_violations": 6,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 16,
+          "unknown_apartment_rows": 41,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "460b11a907",
+          "current_legal_class_a": 16,
+          "noisy_apartment_fraction": 0.3125,
+          "season_1_violations": 1,
+          "season_2_violations": 8,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 5,
+          "unknown_apartment_rows": 17,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "aaddd68709",
+          "current_legal_class_a": 16,
+          "noisy_apartment_fraction": 0.3125,
+          "season_1_violations": 7,
+          "season_2_violations": 2,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 5,
+          "unknown_apartment_rows": 0,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "db02ec9abe",
+          "current_legal_class_a": 17,
+          "noisy_apartment_fraction": 0.29412,
+          "season_1_violations": 2,
+          "season_2_violations": 7,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 5,
+          "unknown_apartment_rows": 11,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "2585a42332",
+          "current_legal_class_a": 26,
+          "noisy_apartment_fraction": 0.26923,
+          "season_1_violations": 3,
+          "season_2_violations": 6,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 7,
+          "unknown_apartment_rows": 4,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "bae5da8c34",
+          "current_legal_class_a": 19,
+          "noisy_apartment_fraction": 0.26316,
+          "season_1_violations": 5,
+          "season_2_violations": 4,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 5,
+          "unknown_apartment_rows": 3,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "753d056120",
+          "current_legal_class_a": 28,
+          "noisy_apartment_fraction": 0.25,
+          "season_1_violations": 2,
+          "season_2_violations": 7,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 7,
+          "unknown_apartment_rows": 8,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "fdef087e96",
+          "current_legal_class_a": 8,
+          "noisy_apartment_fraction": 0.25,
+          "season_1_violations": 3,
+          "season_2_violations": 6,
+          "selected": false,
+          "two_season_distinct_unit_proxy": 2,
+          "unknown_apartment_rows": 8,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "cdf8257d92",
+          "current_legal_class_a": 65,
+          "noisy_apartment_fraction": 0.23077,
+          "season_1_violations": 1,
+          "season_2_violations": 8,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 15,
+          "unknown_apartment_rows": 14,
+          "violation_total_proxy": 9
+        },
+        {
+          "case": "6f32a784d4",
+          "current_legal_class_a": 96,
+          "noisy_apartment_fraction": 0.15625,
+          "season_1_violations": 5,
+          "season_2_violations": 4,
+          "selected": true,
+          "two_season_distinct_unit_proxy": 15,
+          "unknown_apartment_rows": 4,
+          "violation_total_proxy": 9
+        }
+      ]
+    }
+  }
+}

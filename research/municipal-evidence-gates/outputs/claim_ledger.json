@@ -1,0 +1,539 @@
+{
+  "audited_years": {
+    "2024": {
+      "above_boundary": {
+        "selected": 35,
+        "total": 35,
+        "unselected": 0
+      },
+      "address_matches_to_current_api": 50,
+      "below_boundary": {
+        "selected": 0,
+        "total": 237,
+        "unselected": 237
+      },
+      "current_notice_unit_discrepancy_count": 1,
+      "matched_pretrend_analysis": {
+        "distinct_controls": 30,
+        "matched": 31,
+        "pretrend_equivalence": {
+          "complaints": {
+            "ci95": [
+              -0.28684,
+              0.38541
+            ],
+            "note": "Exploratory normal CI may be optimistic due to control reuse; never sufficient for causal proof.",
+            "passed": false
+          },
+          "violations": {
+            "ci95": [
+              -0.29654,
+              0.21335
+            ],
+            "note": "Exploratory normal CI may be optimistic due to control reuse; never sufficient for causal proof.",
+            "passed": false
+          }
+        },
+        "risk_balance_passed": false,
+        "risk_score_smd": 2.5266,
+        "selected_eligible": 49
+      },
+      "missingness_robust_proxy_counterexamples": [],
+      "official_address_unmatched_count": 0,
+      "official_published_list_rows": 50,
+      "rank50_proxy": 9,
+      "selected_current_proxy": 50,
+      "selected_share_of_proxy_pool": 0.17361,
+      "source_eligible_current_proxy": 288,
+      "tie_fraction_partial_order_current_denominator": {
+        "order_undetermined_under_missing_label_bounds": 15,
+        "selected_certainly_outscores_unselected": 0,
+        "unselected_certainly_outscores_selected": 0
+      },
+      "tie_rule_on_current_proxy": {
+        "candidates_at_or_above": 51,
+        "slots_open_to_ties": 15,
+        "tie_break_required_on_observed_candidate_set": true
+      },
+      "tie_support": {
+        "different_season_vector_count_after_all_gates": 2,
+        "exact_total_score_pairs": 15,
+        "same_borough_and_size_pairs": 7,
+        "same_borough_pairs": 9,
+        "selected_buildings_after_all_nearness_gates": 2,
+        "selected_buildings_after_same_season_split": 0,
+        "with_tie_fraction_nearness_pairs": 2
+      },
+      "tied_boundary": {
+        "selected": 15,
+        "total": 16,
+        "unselected": 1
+      }
+    },
+    "2025": {
+      "above_boundary": {
+        "selected": 36,
+        "total": 36,
+        "unselected": 0
+      },
+      "address_matches_to_current_api": 48,
+      "below_boundary": {
+        "selected": 1,
+        "total": 340,
+        "unselected": 339
+      },
+      "current_notice_unit_discrepancy_count": 0,
+      "matched_pretrend_analysis": {
+        "distinct_controls": 32,
+        "matched": 31,
+        "pretrend_equivalence": {
+          "complaints": {
+            "ci95": [
+              -0.39322,
+              0.29592
+            ],
+            "note": "Exploratory normal CI may be optimistic due to control reuse; never sufficient for causal proof.",
+            "passed": false
+          },
+          "violations": {
+            "ci95": [
+              -0.17816,
+              0.30225
+            ],
+            "note": "Exploratory normal CI may be optimistic due to control reuse; never sufficient for causal proof.",
+            "passed": false
+          }
+        },
+        "risk_balance_passed": false,
+        "risk_score_smd": 2.8772,
+        "selected_eligible": 50
+      },
+      "missingness_robust_proxy_counterexamples": [
+        {
+          "selected_alias": "6f32a784d4",
+          "selected_current_fraction_bounds": [
+            0.15625,
+            0.197917
+          ],
+          "unselected_alias": "fdef087e96",
+          "unselected_current_fraction_bounds": [
+            0.25,
+            1.0
+          ]
+        }
+      ],
+      "official_address_unmatched_count": 2,
+      "official_published_list_rows": 50,
+      "rank50_proxy": 9,
+      "selected_current_proxy": 50,
+      "selected_share_of_proxy_pool": 0.12821,
+      "source_eligible_current_proxy": 390,
+      "tie_fraction_partial_order_current_denominator": {
+        "order_undetermined_under_missing_label_bounds": 12,
+        "selected_certainly_outscores_unselected": 0,
+        "unselected_certainly_outscores_selected": 1
+      },
+      "tie_rule_on_current_proxy": {
+        "candidates_at_or_above": 50,
+        "slots_open_to_ties": 14,
+        "tie_break_required_on_observed_candidate_set": false
+      },
+      "tie_support": {
+        "different_season_vector_count_after_all_gates": 1,
+        "exact_total_score_pairs": 13,
+        "same_borough_and_size_pairs": 1,
+        "same_borough_pairs": 3,
+        "selected_buildings_after_all_nearness_gates": 1,
+        "selected_buildings_after_same_season_split": 0,
+        "with_tie_fraction_nearness_pairs": 1
+      },
+      "tied_boundary": {
+        "selected": 13,
+        "total": 14,
+        "unselected": 1
+      }
+    }
+  },
+  "claim_ledger": [
+    {
+      "claim_id": "official_cohort_2024",
+      "rationale": "Published list identifies decisions, not scored candidate universe",
+      "statement": "Official HPD published list contains 50 selected entries",
+      "status": "supported_at_declared_scope",
+      "supporting_evidence": [
+        "official_reconciliation"
+      ],
+      "tier": "decision",
+      "unmet_requirements": []
+    },
+    {
+      "claim_id": "current_boundary_2024",
+      "rationale": "Legal score code from free-text description, does not verify historical administrative ranking",
+      "statement": "Current-public-data proxy threshold is 9 citations",
+      "status": "supported_as_current_proxy_only",
+      "supporting_evidence": [
+        "boundary_support"
+      ],
+      "tier": "decision",
+      "unmet_requirements": [
+        "historical frozen all-candidate inputs",
+        "formal exclusions recorded as of decision"
+      ]
+    },
+    {
+      "claim_id": "full_historical_decision_reproduced_2024",
+      "rationale": null,
+      "statement": "Full as-of-year administrative selection independently reproduced",
+      "status": "requires_additional_historical_evidence",
+      "supporting_evidence": [
+        "official_reconciliation",
+        "boundary_support"
+      ],
+      "tier": "decision",
+      "unmet_requirements": [
+        "decision-time candidate universe",
+        "original scoring ledger",
+        "all 7A and in-rem statuses",
+        "unit-level numerator and denominator versions"
+      ]
+    },
+    {
+      "claim_id": "nearby_equal_risk_controls_2024",
+      "rationale": "Only 0 selected buildings have such a pair; requires positive overlap",
+      "statement": "Exact-score and seasonal vector matched control group with full proximity",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "boundary_support"
+      ],
+      "tier": "comparability",
+      "unmet_requirements": [
+        "same-season-vector comparison pairs under predeclared proximity conditions"
+      ]
+    },
+    {
+      "claim_id": "causal_heat_effect_2024",
+      "rationale": null,
+      "statement": "Heat Sensor Program causal effect on heat hardship or tenant complaints",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "control_pretrends",
+        "boundary_support",
+        "external_claims"
+      ],
+      "tier": "causal",
+      "unmet_requirements": [
+        "defensible counterfactual and overlap",
+        "historical treatment assignment",
+        "supported pretrend/sensitivity analysis",
+        "separation of inspection detection, complaint reporting and indoor temperature"
+      ]
+    },
+    {
+      "claim_id": "official_cohort_2025",
+      "rationale": "Published list identifies decisions, not scored candidate universe",
+      "statement": "Official HPD published list contains 50 selected entries",
+      "status": "supported_at_declared_scope",
+      "supporting_evidence": [
+        "official_reconciliation"
+      ],
+      "tier": "decision",
+      "unmet_requirements": []
+    },
+    {
+      "claim_id": "current_boundary_2025",
+      "rationale": "Legal score code from free-text description, does not verify historical administrative ranking",
+      "statement": "Current-public-data proxy threshold is 9 citations",
+      "status": "supported_as_current_proxy_only",
+      "supporting_evidence": [
+        "boundary_support"
+      ],
+      "tier": "decision",
+      "unmet_requirements": [
+        "historical frozen all-candidate inputs",
+        "formal exclusions recorded as of decision"
+      ]
+    },
+    {
+      "claim_id": "full_historical_decision_reproduced_2025",
+      "rationale": null,
+      "statement": "Full as-of-year administrative selection independently reproduced",
+      "status": "requires_additional_historical_evidence",
+      "supporting_evidence": [
+        "official_reconciliation",
+        "boundary_support"
+      ],
+      "tier": "decision",
+      "unmet_requirements": [
+        "decision-time candidate universe",
+        "original scoring ledger",
+        "all 7A and in-rem statuses",
+        "unit-level numerator and denominator versions"
+      ]
+    },
+    {
+      "claim_id": "nearby_equal_risk_controls_2025",
+      "rationale": "Only 0 selected buildings have such a pair; requires positive overlap",
+      "statement": "Exact-score and seasonal vector matched control group with full proximity",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "boundary_support"
+      ],
+      "tier": "comparability",
+      "unmet_requirements": [
+        "same-season-vector comparison pairs under predeclared proximity conditions"
+      ]
+    },
+    {
+      "claim_id": "causal_heat_effect_2025",
+      "rationale": null,
+      "statement": "Heat Sensor Program causal effect on heat hardship or tenant complaints",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "control_pretrends",
+        "boundary_support",
+        "external_claims"
+      ],
+      "tier": "causal",
+      "unmet_requirements": [
+        "defensible counterfactual and overlap",
+        "historical treatment assignment",
+        "supported pretrend/sensitivity analysis",
+        "separation of inspection detection, complaint reporting and indoor temperature"
+      ]
+    },
+    {
+      "claim_id": "case_2025_issue_date_switch",
+      "rationale": "Each of the three date columns yields 3+5 relevant citations within the same two seasons",
+      "statement": "2025 8-citation selected case can be reconciled by substituting notice, inspection or approval date",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "official_reconciliation"
+      ],
+      "tier": "exception",
+      "unmet_requirements": [
+        "alternative documented admissible citation set or frozen registration history"
+      ]
+    },
+    {
+      "claim_id": "2025_order_residual",
+      "rationale": "Observed ranking mismatch is not proof of legal misconduct; 56-02(a) permits additional criteria",
+      "statement": "One 2025 published selected building falls below observed proxy threshold 9",
+      "status": "supported_as_current_proxy_only",
+      "supporting_evidence": [
+        "boundary_support",
+        "official_reconciliation"
+      ],
+      "tier": "exception",
+      "unmet_requirements": [
+        "time-frozen citation register",
+        "documented inclusion/exclusion decisions"
+      ]
+    },
+    {
+      "claim_id": "mayor_effort_growth",
+      "rationale": "Administrative effort change 38.67%; explicitly attempted visits, not completed inspections",
+      "statement": "HSP proactive attempted building visits rose from 181 to 251 for the first four fiscal months",
+      "status": "supported_at_declared_scope",
+      "supporting_evidence": [
+        "external_claims"
+      ],
+      "tier": "performance",
+      "unmet_requirements": []
+    },
+    {
+      "claim_id": "visits_as_completed_inspections",
+      "rationale": null,
+      "statement": "Attempted visits prove that 251 inspections were completed",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "external_claims"
+      ],
+      "tier": "performance",
+      "unmet_requirements": [
+        "completed visit outcomes or documented attempt-to-completion rate"
+      ]
+    },
+    {
+      "claim_id": "comptroller_descriptive_2025",
+      "rationale": "This reports another office’s descriptive finding, not independent replication by the present audit",
+      "statement": "Comptroller reported a 46% average reduction in complaints after earlier-program activation",
+      "status": "supported_at_declared_scope",
+      "supporting_evidence": [
+        "external_claims"
+      ],
+      "tier": "performance",
+      "unmet_requirements": []
+    },
+    {
+      "claim_id": "comptroller_causal_2025",
+      "rationale": null,
+      "statement": "Reported 46% fewer complaints identifies the counterfactual causal effect of HSP",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "external_claims",
+        "control_pretrends"
+      ],
+      "tier": "causal",
+      "unmet_requirements": [
+        "credible comparison/assignment design",
+        "population and time alignment",
+        "response to reporting selection and mean reversion",
+        "sampling uncertainty"
+      ]
+    },
+    {
+      "claim_id": "observed_changes_indoor_heat",
+      "rationale": null,
+      "statement": "A decline in complaints and/or a rise in recorded violations proves true indoor temperatures improved",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "external_claims"
+      ],
+      "tier": "performance",
+      "unmet_requirements": [
+        "quality-controlled physical temperature panel or defensible thermal outcome proxy",
+        "tenant reporting and inspection/ascertainment adjustments"
+      ]
+    },
+    {
+      "claim_id": "equity_distribution",
+      "rationale": null,
+      "statement": "Equal protection or equitable distribution of enhanced heat enforcement across vulnerability groups established",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "boundary_support"
+      ],
+      "tier": "equity",
+      "unmet_requirements": [
+        "complete legally eligible denominator by subgroup",
+        "stable vulnerability measure",
+        "historical subgroup population and treatment assignment",
+        "distribution of implementation burden and remedy"
+      ]
+    },
+    {
+      "claim_id": "pluto_units_historical_truth",
+      "rationale": null,
+      "statement": "Current PLUTO tax-lot UnitsRes proves historical building-level legal unit count",
+      "status": "not_identified_from_supplied_evidence",
+      "supporting_evidence": [
+        "official_reconciliation",
+        "registry_crosscheck"
+      ],
+      "tier": "history",
+      "unmet_requirements": [
+        "actual 2024/25 building-specific registration records",
+        "historical parcel-to-building crosswalk"
+      ]
+    },
+    {
+      "claim_id": "historical_notices_current_diff",
+      "rationale": "Observed document-vs-current snapshot variation, not proven as-of-year original administrative error",
+      "statement": "Official historic notices differ from present public records on some addresses/unit totals",
+      "status": "supported_at_declared_scope",
+      "supporting_evidence": [
+        "official_reconciliation",
+        "registry_crosscheck"
+      ],
+      "tier": "history",
+      "unmet_requirements": []
+    }
+  ],
+  "framework_name": "Decision-to-Performance Evidence Gates",
+  "limitations": [
+    "Point-in-time CURRENT API reconstruction, not an archival 2024/25 legal classification",
+    "Selection tie priority is triggered by an excess of eligible candidates at the threshold, not every numerical tie",
+    "Intervals for missing apartment labels are conditional on the current denominator, source-proxy validity, and maximum one newly identified unit per unknown complaint row",
+    "Public snapshots do not identify individual agency discretion or establish erroneous selection",
+    "No estimate of treatment impact is generated; unsupported claims are machine-blocked"
+  ],
+  "metric_claim_checks": {
+    "all_category_violations_can_prove_heat_specific_violations": false,
+    "attempted_visits_can_prove_completed_inspections": false,
+    "reported_complaints_can_prove_causal_effect": false,
+    "reported_complaints_can_prove_indoor_temperature": false
+  },
+  "observations": "Prior successful recorded public-data audits plus current official reporting; static replay",
+  "official_attempted_visits_change_percent": 38.67,
+  "source_manifest": {
+    "boundary": {
+      "conclusion": "success",
+      "repo": "risu-research/stc-exec-2609",
+      "run": 42949011539
+    },
+    "controls": {
+      "conclusion": "success",
+      "repo": "risu-research/stc-exec-2609",
+      "run": 42944595738
+    },
+    "heldout_2025": {
+      "conclusion": "success",
+      "repo": "risu-research/risu-verify",
+      "run": 42926868735
+    },
+    "reconciliation": {
+      "conclusion": "success",
+      "repo": "risu-research/formal-exec-2609",
+      "run": 42941459831
+    }
+  },
+  "unexplained_residuals": [
+    {
+      "additional_proofs": [
+        "historical building registration snapshot",
+        "document-as-of census crosswalk"
+      ],
+      "class": "official_notice_vs_current_unit_difference",
+      "count": 1,
+      "label": "The historical notice and current HSP unit totals differ, without evidence yet of which records changed or when",
+      "year": "2024"
+    },
+    {
+      "additional_proofs": [
+        "historic BIN/BBL/building identification and address alias verification"
+      ],
+      "class": "official_notice_vs_current_address_nonmatch",
+      "count": 2,
+      "label": "Conservative address key mismatch; may be alias/typo and does not imply different physical building",
+      "year": "2025"
+    },
+    {
+      "additional_proofs": [
+        "time-frozen legal violation register",
+        "historical eligibility/exemption register",
+        "administrative scoring ledger",
+        "other selection criteria under 56-02(a)"
+      ],
+      "class": "selected_below_observed_cutoff",
+      "count": 1,
+      "label": "observed selection-order residual, not verified statutory violation",
+      "year": "2025"
+    },
+    {
+      "additional_proofs": [
+        "historical legal Class A unit denominator",
+        "time-frozen unit-level complaint coding",
+        "administrative tie-breaking applicability"
+      ],
+      "cases": [
+        {
+          "selected_alias": "6f32a784d4",
+          "selected_current_fraction_bounds": [
+            0.15625,
+            0.197917
+          ],
+          "unselected_alias": "fdef087e96",
+          "unselected_current_fraction_bounds": [
+            0.25,
+            1.0
+          ]
+        }
+      ],
+      "class": "robust_under_unknown_apartment_rows_only",
+      "count": 1,
+      "label": "sensitivity bound conditional on CURRENT Class A denominator and current apartment labels; statutory tie-break only if overflow",
+      "year": "2025"
+    }
+  ],
+  "version": "1.0"
+}

@@ -1,0 +1,312 @@
+{
+  "method": "Legal eligibility proxy -> selected/nonselected -> predeclared exact-borough risk calipers -> out-of-matching-window early-season slope checks",
+  "population_flow": {
+    "2024": {
+      "after_AEP": 336,
+      "after_observable_class_A": 300,
+      "after_prior_HSP_proxy": 281,
+      "candidate_eligibility_proxy": 398,
+      "current_registry_missing": 0,
+      "not_selected_proxy_eligible": 232,
+      "official_selected": 50,
+      "official_selected_outside_proxy": 1,
+      "selected_in_proxy_eligible": 49,
+      "unknown_borough_eligible": 0
+    },
+    "2025": {
+      "after_AEP": 466,
+      "after_observable_class_A": 433,
+      "after_prior_HSP_proxy": 386,
+      "candidate_eligibility_proxy": 541,
+      "current_registry_missing": 0,
+      "not_selected_proxy_eligible": 336,
+      "official_selected": 50,
+      "official_selected_outside_proxy": 0,
+      "selected_in_proxy_eligible": 50,
+      "unknown_borough_eligible": 0
+    }
+  },
+  "prespecified_matching_calipers": {
+    "heldout_slope_equivalence_tolerance_log_rate_per_season": 0.15,
+    "max_baseline_absolute_standardized_mean_difference": 0.2,
+    "max_combined_distance": 1.3,
+    "max_controls_per_treated": 2,
+    "max_log_lastseason_complaints_delta": 1.0986122886681098,
+    "max_log_legal_violation_score_delta": 0.4054651081081644,
+    "max_log_units_delta": 0.9162907318741551
+  },
+  "source": "NYC official public Socrata API, program and housing records",
+  "utc": "2026-11-11T02:38:01.003488+00:00",
+  "warnings": [
+    "Current HPD Class A unit and borough registration snapshot is not an as-of-selection archive.",
+    "AEP and prior-HSP exclusion proxies omit 7A and in-rem historical legal exclusions.",
+    "Eligibility uses free-text legal-citation search and unique raw apartment labels, which may differ from HPD classification.",
+    "Socrata monthly unique complaint IDs summed across months are building-month events and can double-count cross-month reopens.",
+    "Matching only pre-selection features cannot establish causal exchangeability.",
+    "Potential regression to the mean around risk-based selection; this is pre-trend feasibility, not causal estimation."
+  ],
+  "years": {
+    "2024": {
+      "balance": {
+        "log_legal_violation_score": {
+          "matched_control_mean": 2.1436,
+          "standardized_difference": 2.5266,
+          "treated_mean": 2.4119
+        },
+        "log_prior_season_complaints": {
+          "matched_control_mean": 3.8137,
+          "standardized_difference": -0.0217,
+          "treated_mean": 3.7954
+        },
+        "log_prior_season_heat_violations": {
+          "matched_control_mean": 1.49,
+          "standardized_difference": 0.8305,
+          "treated_mean": 1.8017
+        },
+        "log_unit_count": {
+          "matched_control_mean": 3.6661,
+          "standardized_difference": 0.0032,
+          "treated_mean": 3.6687
+        }
+      },
+      "baseline_balance_features_below_margin": 2,
+      "distinct_matched_control_buildings": 30,
+      "interpretation": "Only eligible near-comparable matched subset; neither selected outcome means nor treatment effect.",
+      "matched_control_pairs": 53,
+      "percent_treated_matched": 63.3,
+      "pretrends": {
+        "complaints": {
+          "equivalence_judgment": "inconclusive_about_equivalence",
+          "heldout_early_seasons": [
+            2019,
+            2020,
+            2021
+          ],
+          "matched_paired_slope_difference": {
+            "ci95": [
+              -0.28684,
+              0.38541
+            ],
+            "mean": 0.04929,
+            "n": 31
+          },
+          "trajectory": [
+            {
+              "matched_control_log_rate_mean": 3.39191,
+              "mean_difference": -0.27677,
+              "season_start": 2019,
+              "treated_log_rate_mean": 3.11514
+            },
+            {
+              "matched_control_log_rate_mean": 3.35579,
+              "mean_difference": -0.07978,
+              "season_start": 2020,
+              "treated_log_rate_mean": 3.27602
+            },
+            {
+              "matched_control_log_rate_mean": 4.08847,
+              "mean_difference": -0.17819,
+              "season_start": 2021,
+              "treated_log_rate_mean": 3.91027
+            },
+            {
+              "matched_control_log_rate_mean": 4.82816,
+              "mean_difference": -0.12682,
+              "season_start": 2022,
+              "treated_log_rate_mean": 4.70134
+            },
+            {
+              "matched_control_log_rate_mean": 4.73185,
+              "mean_difference": -0.0189,
+              "season_start": 2023,
+              "treated_log_rate_mean": 4.71294
+            }
+          ]
+        },
+        "violations": {
+          "equivalence_judgment": "inconclusive_about_equivalence",
+          "heldout_early_seasons": [
+            2019,
+            2020,
+            2021
+          ],
+          "matched_paired_slope_difference": {
+            "ci95": [
+              -0.29654,
+              0.21335
+            ],
+            "mean": -0.0416,
+            "n": 31
+          },
+          "trajectory": [
+            {
+              "matched_control_log_rate_mean": 0.14028,
+              "mean_difference": 0.30407,
+              "season_start": 2019,
+              "treated_log_rate_mean": 0.44435
+            },
+            {
+              "matched_control_log_rate_mean": 0.65543,
+              "mean_difference": -0.30474,
+              "season_start": 2020,
+              "treated_log_rate_mean": 0.3507
+            },
+            {
+              "matched_control_log_rate_mean": 0.83218,
+              "mean_difference": 0.22088,
+              "season_start": 2021,
+              "treated_log_rate_mean": 1.05305
+            },
+            {
+              "matched_control_log_rate_mean": 2.27842,
+              "mean_difference": 0.1223,
+              "season_start": 2022,
+              "treated_log_rate_mean": 2.40072
+            },
+            {
+              "matched_control_log_rate_mean": 2.27833,
+              "mean_difference": 0.35459,
+              "season_start": 2023,
+              "treated_log_rate_mean": 2.63292
+            }
+          ]
+        }
+      },
+      "selected_eligible_with_borough": 49,
+      "treated_matched": 31,
+      "treated_unmatched": 18,
+      "unselected_eligible_with_borough": 232
+    },
+    "2025": {
+      "balance": {
+        "log_legal_violation_score": {
+          "matched_control_mean": 2.159,
+          "standardized_difference": 2.8772,
+          "treated_mean": 2.3922
+        },
+        "log_prior_season_complaints": {
+          "matched_control_mean": 3.5833,
+          "standardized_difference": 0.192,
+          "treated_mean": 3.7645
+        },
+        "log_prior_season_heat_violations": {
+          "matched_control_mean": 1.4892,
+          "standardized_difference": 1.2119,
+          "treated_mean": 1.9379
+        },
+        "log_unit_count": {
+          "matched_control_mean": 3.3617,
+          "standardized_difference": -0.0346,
+          "treated_mean": 3.3358
+        }
+      },
+      "baseline_balance_features_below_margin": 2,
+      "distinct_matched_control_buildings": 32,
+      "interpretation": "Only eligible near-comparable matched subset; neither selected outcome means nor treatment effect.",
+      "matched_control_pairs": 58,
+      "percent_treated_matched": 62.0,
+      "pretrends": {
+        "complaints": {
+          "equivalence_judgment": "inconclusive_about_equivalence",
+          "heldout_early_seasons": [
+            2020,
+            2021,
+            2022
+          ],
+          "matched_paired_slope_difference": {
+            "ci95": [
+              -0.39322,
+              0.29592
+            ],
+            "mean": -0.04865,
+            "n": 31
+          },
+          "trajectory": [
+            {
+              "matched_control_log_rate_mean": 2.74494,
+              "mean_difference": -0.12907,
+              "season_start": 2020,
+              "treated_log_rate_mean": 2.61587
+            },
+            {
+              "matched_control_log_rate_mean": 3.04002,
+              "mean_difference": 0.11619,
+              "season_start": 2021,
+              "treated_log_rate_mean": 3.15621
+            },
+            {
+              "matched_control_log_rate_mean": 3.5655,
+              "mean_difference": -0.22637,
+              "season_start": 2022,
+              "treated_log_rate_mean": 3.33913
+            },
+            {
+              "matched_control_log_rate_mean": 4.6949,
+              "mean_difference": -0.19239,
+              "season_start": 2023,
+              "treated_log_rate_mean": 4.50251
+            },
+            {
+              "matched_control_log_rate_mean": 4.79501,
+              "mean_difference": 0.20711,
+              "season_start": 2024,
+              "treated_log_rate_mean": 5.00212
+            }
+          ]
+        },
+        "violations": {
+          "equivalence_judgment": "inconclusive_about_equivalence",
+          "heldout_early_seasons": [
+            2020,
+            2021,
+            2022
+          ],
+          "matched_paired_slope_difference": {
+            "ci95": [
+              -0.17816,
+              0.30225
+            ],
+            "mean": 0.06204,
+            "n": 31
+          },
+          "trajectory": [
+            {
+              "matched_control_log_rate_mean": 0.34301,
+              "mean_difference": -0.04823,
+              "season_start": 2020,
+              "treated_log_rate_mean": 0.29477
+            },
+            {
+              "matched_control_log_rate_mean": 0.45503,
+              "mean_difference": -0.10535,
+              "season_start": 2021,
+              "treated_log_rate_mean": 0.34968
+            },
+            {
+              "matched_control_log_rate_mean": 0.70786,
+              "mean_difference": 0.07585,
+              "season_start": 2022,
+              "treated_log_rate_mean": 0.78371
+            },
+            {
+              "matched_control_log_rate_mean": 2.54746,
+              "mean_difference": -0.09085,
+              "season_start": 2023,
+              "treated_log_rate_mean": 2.45661
+            },
+            {
+              "matched_control_log_rate_mean": 2.56817,
+              "mean_difference": 0.5295,
+              "season_start": 2024,
+              "treated_log_rate_mean": 3.09767
+            }
+          ]
+        }
+      },
+      "selected_eligible_with_borough": 50,
+      "treated_matched": 31,
+      "treated_unmatched": 19,
+      "unselected_eligible_with_borough": 336
+    }
+  }
+}
