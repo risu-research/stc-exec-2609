@@ -1,0 +1,51 @@
+name: s2ai-e3-real-mcp-downstream-effects
+on:
+  push:
+    branches: [s2ai-e3-downstream-effect-20261121]
+    paths:
+      - '.github/workflows/s2ai-e3-effects.yml'
+      - 'research/s2ai-e3/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  downstream-effect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Checkout immutable public upstream
+        run: |
+          git clone --quiet https://github.com/piotr-agier/google-drive-mcp.git upstream
+          git -C upstream checkout --quiet 9509fb8bba8ad15f7cdb79a54dbd850c13eb058b
+          git -C upstream rev-parse HEAD
+          test -z "$(git -C upstream status --porcelain)"
+      - name: Install upstream dependencies and standalone tests
+        run: |
+          cd upstream
+          npm ci --ignore-scripts
+          cp ../research/s2ai-e3/e3_stdio_upstream_server.ts test/integration/e3_stdio_upstream_server.ts
+          cp ../research/s2ai-e3/e3_downstream_effect.test.ts test/integration/e3_downstream_effect.test.ts
+          git status --short
+      - name: Build all upstream MCP server modules and integration tests
+        run: |
+          cd upstream
+          npm run test:build
+      - name: Execute real MCP search to write over stdio and loopback HTTP
+        run: |
+          cd upstream
+          set -o pipefail
+          MCP_TESTING=1 node --test .tmp-test/test/integration/e3_downstream_effect.test.js 2>&1 | tee ../e3-test.log
+      - name: Upload independently readback effect evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s2ai-e3-mcp-effect-evidence
+          if-no-files-found: warn
+          path: |
+            e3-test.log
+            upstream/results/e3_downstream_report.json
+            upstream/results/e3_provider_writes.jsonl
