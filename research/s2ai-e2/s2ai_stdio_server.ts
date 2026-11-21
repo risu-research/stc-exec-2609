@@ -7,6 +7,7 @@ const mocks = createAllMocks();
 (google as any).sheets = mocks.google.sheets;
 (google as any).slides = mocks.google.slides;
 (google as any).calendar = mocks.google.calendar;
+async function main() {
 const {server, _setAuthClientForTesting} = await import('../../src/index.js');
 _setAuthClientForTesting({request: async () => ({data:'mock-auth-request-response'})});
 const incompleteSearch = process.env.S2AI_PROVIDER_FLAG === 'true';
@@ -15,3 +16,5 @@ mocks.drive.service.files.list._setImpl(async (params: any) => {
   return {data:{files:[],incompleteSearch}};
 });
 await server.connect(new StdioServerTransport());
+}
+main().catch(error => { console.error(error); process.exitCode=1; });
