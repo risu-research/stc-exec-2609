@@ -31,6 +31,8 @@ jobs:
           cd upstream
           npm ci --ignore-scripts
           cp ../research/s2ai-e2/s2ai_mcp_full_runtime.test.ts test/integration/s2ai_mcp_full_runtime.test.ts
+          cp ../research/s2ai-e2/s2ai_stdio_client.test.ts test/integration/s2ai_stdio_client.test.ts
+          cp ../research/s2ai-e2/s2ai_stdio_server.ts test/integration/s2ai_stdio_server.ts
           echo "MODIFIED_FILES="
           git status --short
       - name: Compile original complete server plus new integration test
@@ -40,7 +42,7 @@ jobs:
       - name: Run MCP Server Client integration tests on actual installed SDK
         run: |
           cd upstream
-          MCP_TESTING=1 node --test .tmp-test/test/integration/s2ai_mcp_full_runtime.test.js 2>&1 | tee ../s2ai-e2-test.log
+          MCP_TESTING=1 node --test .tmp-test/test/integration/s2ai_mcp_full_runtime.test.js .tmp-test/test/integration/s2ai_stdio_client.test.js 2>&1 | tee ../s2ai-e2-test.log
       - name: Publish execution evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -50,3 +52,4 @@ jobs:
           path: |
             s2ai-e2-test.log
             upstream/results/s2ai_full_runtime.json
+            upstream/results/s2ai_stdio_runtime.json
