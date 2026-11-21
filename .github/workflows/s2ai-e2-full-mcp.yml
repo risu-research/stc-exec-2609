@@ -1,0 +1,52 @@
+name: s2ai-e2-full-mcp-upstream
+on:
+  push:
+    branches: [s2ai-e2-full-mcp-20261121]
+    paths:
+      - '.github/workflows/s2ai-e2-full-mcp.yml'
+      - 'research/s2ai-e2/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Checkout unmodified upstream source at exact commit
+        run: |
+          git clone --quiet https://github.com/piotr-agier/google-drive-mcp.git upstream
+          git -C upstream checkout --quiet 9509fb8bba8ad15f7cdb79a54dbd850c13eb058b
+          echo "PINNED_COMMIT=$(git -C upstream rev-parse HEAD)"
+          git -C upstream status --short
+      - name: Install original dependencies and add test (no upstream src edits)
+        run: |
+          cd upstream
+          npm ci --ignore-scripts
+          cp ../research/s2ai-e2/s2ai_mcp_full_runtime.test.ts test/integration/s2ai_mcp_full_runtime.test.ts
+          echo "MODIFIED_FILES="
+          git status --short
+      - name: Compile original complete server plus new integration test
+        run: |
+          cd upstream
+          npm run test:build
+      - name: Run MCP Server Client integration tests on actual installed SDK
+        run: |
+          cd upstream
+          MCP_TESTING=1 node --test .tmp-test/test/integration/s2ai_mcp_full_runtime.test.js 2>&1 | tee ../s2ai-e2-test.log
+      - name: Publish execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s2ai-e2-full-mcp-evidence
+          if-no-files-found: warn
+          path: |
+            s2ai-e2-test.log
+            upstream/results/s2ai_full_runtime.json
